@@ -177,7 +177,8 @@ func TestClientUserAnonymousStatus(t *testing.T) {
 
 		validationResult, _ := testClient.UserAnonymousStatus(claims)
 
-		assert.Equal(t, testCase.expectedValidationResult, validationResult, "anonymous verification validation does not match")
+		assert.Equal(t, testCase.expectedValidationResult, validationResult,
+			"anonymous verification validation does not match")
 	}
 }
 
@@ -203,19 +204,47 @@ func TestClientValidateAndParseClaims(t *testing.T) {
 
 func TestClientValidatePermissionResourceString(t *testing.T) {
 	type testTable struct {
-		requiredResource         string
-		grantedResource          string
-		expectedValidationResult bool
+		requiredResource string
+		grantedResource  string
+		expectedResult   bool
 	}
 
 	testCases := []testTable{
-		{requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday", grantedResource: "NAMESPACE:foo:USER:888:PROFILE:birthday", expectedValidationResult: true},
-		{requiredResource: "NAMESPACE:foo:USER:888:PROFILE:*", grantedResource: "NAMESPACE:foo:USER:888:PROFILE:birthday", expectedValidationResult: false},
-		{requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday", grantedResource: "NAMESPACE:foo:USER:888:PROFILE:*", expectedValidationResult: true},
-		{requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday", grantedResource: "NAMESPACE:foo:USER:*", expectedValidationResult: true},
-		{requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday", grantedResource: "NAMESPACE:foo:USER", expectedValidationResult: false},
-		{requiredResource: "NAMESPACE:foo:USER:888", grantedResource: "NAMESPACE:foo:USER:888:*:*", expectedValidationResult: true},
-		{requiredResource: "NAMESPACE:foo:USER:888", grantedResource: "NAMESPACE:foo:USER:888:PROFILE:*", expectedValidationResult: false},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
+			grantedResource:  "NAMESPACE:foo:USER:888:PROFILE:birthday",
+			expectedResult:   true,
+		},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888:PROFILE:*",
+			grantedResource:  "NAMESPACE:foo:USER:888:PROFILE:birthday",
+			expectedResult:   false,
+		},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
+			grantedResource:  "NAMESPACE:foo:USER:888:PROFILE:*",
+			expectedResult:   true,
+		},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
+			grantedResource:  "NAMESPACE:foo:USER:*",
+			expectedResult:   true,
+		},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
+			grantedResource:  "NAMESPACE:foo:USER",
+			expectedResult:   false,
+		},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888",
+			grantedResource:  "NAMESPACE:foo:USER:888:*:*",
+			expectedResult:   true,
+		},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888",
+			grantedResource:  "NAMESPACE:foo:USER:888:PROFILE:*",
+			expectedResult:   false,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -232,26 +261,25 @@ func TestClientValidatePermissionResourceString(t *testing.T) {
 			Permissions: []Permission{grantedPermission}}
 		claims := generateClaims(t, userData)
 
-		var permissionResources map[string]string
-		permissionResources = make(map[string]string)
+		permissionResources := make(map[string]string)
 		permissionResources["{namespace}"] = userData.Namespace
 		validationResult, _ := testClient.ValidatePermission(claims, requiredPermission, permissionResources)
 
-		assert.Equal(t, testCase.expectedValidationResult, validationResult, "resource string validation does not match")
+		assert.Equal(t, testCase.expectedResult, validationResult, "resource string validation does not match")
 	}
 }
 
 func TestClientValidatePermissionResourceStringOnRole(t *testing.T) {
 	type testTable struct {
-		requiredResource         string
-		expectedValidationResult bool
+		requiredResource string
+		expectedResult   bool
 	}
 
 	testCases := []testTable{
-		{requiredResource: "NAMESPACE:foo:USER:888:ORDER", expectedValidationResult: true},
-		{requiredResource: "NAMESPACE:bar:USER:888:ORDER", expectedValidationResult: false},
-		{requiredResource: "NAMESPACE:foo:USER:888:ORDER", expectedValidationResult: true},
-		{requiredResource: "NAMESPACE:foo:USER:999:ORDER", expectedValidationResult: false},
+		{requiredResource: "NAMESPACE:foo:USER:888:ORDER", expectedResult: true},
+		{requiredResource: "NAMESPACE:bar:USER:888:ORDER", expectedResult: false},
+		{requiredResource: "NAMESPACE:foo:USER:888:ORDER", expectedResult: true},
+		{requiredResource: "NAMESPACE:foo:USER:999:ORDER", expectedResult: false},
 	}
 
 	for _, testCase := range testCases {
@@ -263,37 +291,58 @@ func TestClientValidatePermissionResourceStringOnRole(t *testing.T) {
 		userData := &tokenUserData{UserID: "888", Namespace: "foo", Roles: []string{defaultUserRole}}
 		claims := generateClaims(t, userData)
 
-		var permissionResources map[string]string
-		permissionResources = make(map[string]string)
+		permissionResources := make(map[string]string)
 		permissionResources["{namespace}"] = userData.Namespace
 		validationResult, _ := testClient.ValidatePermission(claims, requiredPermission, permissionResources)
 
-		assert.Equal(t, testCase.expectedValidationResult, validationResult, "resource string %s validation on roles does not match", requiredPermission.Resource)
+		assert.Equal(t, testCase.expectedResult, validationResult,
+			"resource string %s validation on roles does not match", requiredPermission.Resource)
 	}
 }
 
 func TestClientValidatePermissionActionBitMask(t *testing.T) {
 	type testTable struct {
-		requiredAction           int
-		grantedAction            int
-		expectedValidationResult bool
+		requiredAction int
+		grantedAction  int
+		expectedResult bool
 	}
 
 	testCases := []testTable{
-		{requiredAction: ActionCreate | ActionRead | ActionUpdate, grantedAction: ActionCreate | ActionRead | ActionUpdate,
-			expectedValidationResult: true},
-		{requiredAction: ActionCreate | ActionRead | ActionUpdate, grantedAction: ActionCreate | ActionRead,
-			expectedValidationResult: false},
-		{requiredAction: ActionCreate | ActionRead | ActionUpdate, grantedAction: ActionCreate | ActionRead | ActionUpdate | ActionDelete,
-			expectedValidationResult: true},
-		{requiredAction: ActionCreate | ActionRead | ActionUpdate, grantedAction: 0,
-			expectedValidationResult: false},
-		{requiredAction: ActionCreate, grantedAction: ActionCreate | ActionRead | ActionUpdate | ActionDelete,
-			expectedValidationResult: true},
-		{requiredAction: ActionCreate | ActionRead | ActionUpdate | ActionDelete, grantedAction: 1,
-			expectedValidationResult: false},
-		{requiredAction: ActionUpdate | ActionDelete, grantedAction: ActionRead | ActionDelete,
-			expectedValidationResult: false},
+		{
+			requiredAction: ActionCreate | ActionRead | ActionUpdate,
+			grantedAction:  ActionCreate | ActionRead | ActionUpdate,
+			expectedResult: true,
+		},
+		{
+			requiredAction: ActionCreate | ActionRead | ActionUpdate,
+			grantedAction:  ActionCreate | ActionRead,
+			expectedResult: false,
+		},
+		{
+			requiredAction: ActionCreate | ActionRead | ActionUpdate,
+			grantedAction:  ActionCreate | ActionRead | ActionUpdate | ActionDelete,
+			expectedResult: true,
+		},
+		{
+			requiredAction: ActionCreate | ActionRead | ActionUpdate,
+			grantedAction:  0,
+			expectedResult: false,
+		},
+		{
+			requiredAction: ActionCreate,
+			grantedAction:  ActionCreate | ActionRead | ActionUpdate | ActionDelete,
+			expectedResult: true,
+		},
+		{
+			requiredAction: ActionCreate | ActionRead | ActionUpdate | ActionDelete,
+			grantedAction:  1,
+			expectedResult: false,
+		},
+		{
+			requiredAction: ActionUpdate | ActionDelete,
+			grantedAction:  ActionRead | ActionDelete,
+			expectedResult: false,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -310,12 +359,11 @@ func TestClientValidatePermissionActionBitMask(t *testing.T) {
 			Permissions: []Permission{grantedPermission}}
 		claims := generateClaims(t, userData)
 
-		var permissionResources map[string]string
-		permissionResources = make(map[string]string)
+		permissionResources := make(map[string]string)
 		permissionResources["{namespace}"] = userData.Namespace
 		validationResult, _ := testClient.ValidatePermission(claims, requiredPermission, permissionResources)
 
-		assert.Equal(t, testCase.expectedValidationResult, validationResult, "action bitmask validation does not match")
+		assert.Equal(t, testCase.expectedResult, validationResult, "action bitmask validation does not match")
 	}
 }
 

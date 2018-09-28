@@ -41,10 +41,13 @@ func (client *DefaultClient) permissionAllowed(grantedPermissions []Permission, 
 	return false
 }
 
-func (client *DefaultClient) applyUserPermissionResourceValues(grantedPermissions []Permission, claims *JWTClaims) []Permission {
+func (client *DefaultClient) applyUserPermissionResourceValues(
+	grantedPermissions []Permission, claims *JWTClaims) []Permission {
 	for i := range grantedPermissions {
-		grantedPermissions[i].Resource = strings.Replace(grantedPermissions[i].Resource, "{userId}", claims.Subject, -1)
-		grantedPermissions[i].Resource = strings.Replace(grantedPermissions[i].Resource, "{namespace}", claims.Namespace, -1)
+		grantedPermissions[i].Resource = strings.Replace(
+			grantedPermissions[i].Resource, "{userId}", claims.Subject, -1)
+		grantedPermissions[i].Resource = strings.Replace(
+			grantedPermissions[i].Resource, "{namespace}", claims.Namespace, -1)
 	}
 	return grantedPermissions
 }
