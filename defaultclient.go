@@ -160,9 +160,12 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string) (*JWTCla
 }
 
 // ValidatePermission validates if an access token has right for a specific permission
-// requiredPermission: permission to access resource, example: {Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
-// permissionResources: resource string to replace the `{}` placeholder in `requiredPermission`, example: p["{namespace}"] = "accelbyte"
-func (client *DefaultClient) ValidatePermission(claims *JWTClaims, requiredPermission Permission, permissionResources map[string]string) (bool, error) {
+// requiredPermission: permission to access resource, example:
+// 		{Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
+// permissionResources: resource string to replace the `{}` placeholder in
+// 		`requiredPermission`, example: p["{namespace}"] = "accelbyte"
+func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
+	requiredPermission Permission, permissionResources map[string]string) (bool, error) {
 	if claims == nil {
 		return false, nil
 	}

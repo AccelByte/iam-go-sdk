@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.com/AccelByte/iam-go-sdk.svg?branch=master)](https://travis-ci.com/AccelByte/iam-go-sdk)
+
 # IAM Go SDK
 
 This is AccelByte's IAM Go SDK for integrating with IAM in Go projects.

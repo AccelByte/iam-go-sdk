@@ -32,7 +32,9 @@ package iam
 // }
 //
 // func myFunction(iamClient *client.IAMClientAPI) {
-// 	iamClient.ValidateTokenPermission(models.Permission{Resource: "NAMESPACE:{namespace}:EXAMPLE", Action: 4}, "accessToken")
+// 	iamClient.ValidateTokenPermission(models.Permission{
+// 		Resource: "NAMESPACE:{namespace}:EXAMPLE", Action: 4
+// 		}, "accessToken")
 // }
 //
 type Client interface {
@@ -53,9 +55,12 @@ type Client interface {
 	ValidateAndParseClaims(accessToken string) (*JWTClaims, error)
 
 	// ValidatePermission validates if an access token has right for a specific permission
-	// requiredPermission: permission to access resource, example: {Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
-	// permissionResources: resource string to replace the `{}` placeholder in `requiredPermission`, example: p["{namespace}"] = "accelbyte"
-	ValidatePermission(claims *JWTClaims, requiredPermission Permission, permissionResources map[string]string) (bool, error)
+	// requiredPermission: permission to access resource, example:
+	// 		{Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
+	// permissionResources: resource string to replace the `{}` placeholder in
+	// 		`requiredPermission`, example: p["{namespace}"] = "accelbyte"
+	ValidatePermission(claims *JWTClaims, requiredPermission Permission,
+		permissionResources map[string]string) (bool, error)
 
 	// ValidateRole validates if an access token has a specific role
 	ValidateRole(requiredRoleID string, claims *JWTClaims) (bool, error)
