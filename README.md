@@ -21,7 +21,7 @@ cfg := &iam.Config{
     ClientSecret: "<client secret>",
 }
 
-client, _ := iam.NewDefaultClient(cfg)
+client := iam.NewDefaultClient(cfg)
 ```
 
 It's recommended that you store the **interface** rather than the type since it enables you to mock the client during tests.
@@ -29,7 +29,7 @@ It's recommended that you store the **interface** rather than the type since it 
 ```go
 var client iam.Client
 
-client, _ := iam.NewDefaultClient(cfg)
+client := iam.NewDefaultClient(cfg)
 ```
 
 So during tests, you can replace the `client` with:
@@ -37,7 +37,7 @@ So during tests, you can replace the `client` with:
 ```go
 var client iam.Client
 
-client, _ := iam.NewMockClient() // or create your own mock implementation that suits your test case
+client := iam.NewMockClient() // or create your own mock implementation that suits your test case
 ```
 
 **Note**
