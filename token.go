@@ -55,7 +55,11 @@ func (client *DefaultClient) validateJWT(token string) (*JWTClaims, error) {
 
 	var jwtClaims = JWTClaims{}
 	keyFunction := func(token *jwt.Token) (interface{}, error) {
-		publicKey, err := client.getPublicKey(token.Header["kid"].(string))
+		keyID, ok := token.Header["kid"].(string)
+		if !ok {
+			return nil, fmt.Errorf("token does not have ID")
+		}
+		publicKey, err := client.getPublicKey(keyID)
 		if err != nil {
 			return nil, err
 		}
