@@ -149,7 +149,7 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string) (*JWTCla
 	if err != nil {
 		return nil, fmt.Errorf("unable to verify JWT : %v", err)
 	}
-	if client.userRevoked(claims.Subject, claims.IssuedAt) {
+	if client.userRevoked(claims.Subject, int64(claims.IssuedAt)) {
 		return nil, errors.New("user has been revoked")
 	}
 	if client.tokenRevoked(accessToken) {

@@ -25,7 +25,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/AccelByte/go-jose/jwt"
 )
 
 func (client *DefaultClient) validateAccessToken(accessToken string) (bool, error) {
@@ -54,19 +54,18 @@ func (client *DefaultClient) validateJWT(token string) (*JWTClaims, error) {
 	}
 
 	var jwtClaims = JWTClaims{}
-	keyFunction := func(token *jwt.Token) (interface{}, error) {
-		keyID, ok := token.Header["kid"].(string)
-		if !ok {
-			return nil, fmt.Errorf("token does not have ID")
-		}
-		publicKey, err := client.getPublicKey(keyID)
-		if err != nil {
-			return nil, err
-		}
-		return publicKey, nil
+
+	webToken, err := jwt.ParseSigned(token)
+	if err != nil {
+		return nil, err
 	}
 
-	_, err := jwt.ParseWithClaims(token, &jwtClaims, keyFunction)
+	publicKey, err := client.getPublicKey(webToken.Headers[0].KeyID)
+	if err != nil {
+		return nil, err
+	}
+
+	err = webToken.Claims(publicKey, &jwtClaims)
 	if err != nil {
 		return nil, err
 	}

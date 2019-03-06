@@ -19,7 +19,7 @@ package iam
 import (
 	"errors"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/AccelByte/go-jose/jwt"
 )
 
 // Mock IAM constants
@@ -68,8 +68,8 @@ func (client *MockClient) ValidateAccessToken(accessToken string) (bool, error) 
 // ValidateAndParseClaims validates access token locally and returns the JWT claims contained in the token
 func (client *MockClient) ValidateAndParseClaims(accessToken string) (*JWTClaims, error) {
 	claims := &JWTClaims{
-		StandardClaims: jwt.StandardClaims{Subject: accessToken},
-		Namespace:      "MOCK",
+		Claims:    jwt.Claims{Subject: accessToken},
+		Namespace: "MOCK",
 	}
 
 	switch accessToken {

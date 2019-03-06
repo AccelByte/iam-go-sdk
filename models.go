@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/AccelByte/bloom"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/AccelByte/go-jose/jwt"
 	"github.com/gorhill/cronexpr"
 )
 
@@ -133,7 +133,7 @@ type JWTClaims struct {
 	Permissions  []Permission `json:"permissions"`
 	Bans         []JWTBan     `json:"bans"`
 	JusticeFlags int          `json:"jflgs"`
-	jwt.StandardClaims
+	jwt.Claims
 }
 
 // RevocationList contains revoked user and token

@@ -19,11 +19,14 @@ package iam
 import (
 	"bytes"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 	"time"
 
 	"github.com/AccelByte/bloom"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/AccelByte/go-jose"
+	"github.com/AccelByte/go-jose/jwt"
 	"github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
 )
@@ -74,9 +77,10 @@ type tokenUserData struct {
 
 var testClient Client
 var privateKey *rsa.PrivateKey
+var signer jose.Signer
 
 func init() {
-	privateKey, _ = jwt.ParseRSAPrivateKeyFromPEM([]byte(testJWTPrivateKey))
+	privateKey = mustUnmarshalRSA(testJWTPrivateKey)
 	testClient = &DefaultClient{
 		keys:                  make(map[string]*rsa.PublicKey),
 		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
@@ -84,6 +88,19 @@ func init() {
 		revokedUsers:          make(map[string]time.Time),
 		localValidationActive: true,
 	}
+
+	var err error
+	signer, err = jose.NewSigner(jose.SigningKey{
+		Algorithm: jose.RS256,
+		Key: jose.JSONWebKey{
+			KeyID: keyID,
+			Key:   privateKey,
+		}},
+		(&jose.SignerOptions{}).WithType("JWT"))
+	if err != nil {
+		panic(err)
+	}
+
 	testClient.(*DefaultClient).keys[keyID] = &rsa.PublicKey{
 		E: privateKey.PublicKey.E,
 		N: privateKey.PublicKey.N,
@@ -98,6 +115,26 @@ func init() {
 			}
 			return true, nil
 		}
+}
+
+func mustUnmarshalRSA(data string) *rsa.PrivateKey {
+	block, _ := pem.Decode([]byte(data))
+	if block == nil {
+		panic("failed to decode PEM data")
+	}
+
+	var key interface{}
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		key, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			panic("failed to parse RSA key: " + err.Error())
+		}
+	}
+	if key, ok := key.(*rsa.PrivateKey); ok {
+		return key
+	}
+	panic("key is not of type *rsa.PrivateKey")
 }
 
 func TestClientUserEmailVerificationStatus(t *testing.T) {
@@ -191,11 +228,11 @@ func TestClientValidateAndParseClaims(t *testing.T) {
 		Permissions: []Permission{grantedPermission}}
 
 	claims := generateClaims(t, userData)
+	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
+	if err != nil {
+		panic(err)
+	}
 
-	jwtToken := jwt.NewWithClaims(jwt.GetSigningMethod(jwt.SigningMethodRS256.Name), claims)
-	jwtToken.Header["kid"] = keyID
-
-	accessToken, _ := jwtToken.SignedString(privateKey)
 	claims, errValidateAndParseClaims := testClient.ValidateAndParseClaims(accessToken)
 
 	assert.Nil(t, errValidateAndParseClaims, "access token is invalid")
@@ -389,9 +426,10 @@ func TestVerifyAccessTokenValidToken(t *testing.T) {
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Namespace: "foo"}
 	claims := generateClaims(t, userData)
 
-	jwtToken := jwt.NewWithClaims(jwt.GetSigningMethod(jwt.SigningMethodRS256.Name), claims)
-	jwtToken.Header["kid"] = keyID
-	accessToken, _ := jwtToken.SignedString(privateKey)
+	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
+	if err != nil {
+		panic(err)
+	}
 
 	validationResult, _ := testClient.ValidateAccessToken(accessToken)
 
@@ -414,13 +452,13 @@ func TestValidateRevokedUser(t *testing.T) {
 		JusticeFlags: 7}
 	claims := generateClaims(t, userData)
 
-	jwtToken := jwt.NewWithClaims(jwt.GetSigningMethod(jwt.SigningMethodRS256.Name), claims)
-	jwtToken.Header["kid"] = keyID
-	accessToken, _ := jwtToken.SignedString(privateKey)
-
+	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
+	if err != nil {
+		panic(err)
+	}
 	testClient.(*DefaultClient).revokedUsers["e71d22e2b270449c90d4c15b89c3f994"] = time.Now().UTC()
 
-	claims, err := testClient.ValidateAndParseClaims(accessToken)
+	claims, err = testClient.ValidateAndParseClaims(accessToken)
 
 	assert.NotNil(t, err, "revoked user validation should not be granted on permission validation")
 	assert.Nil(t, claims, "claims should be nil")
@@ -436,13 +474,13 @@ func TestValidateRevokedToken(t *testing.T) {
 		JusticeFlags: 7}
 	claims := generateClaims(t, userData)
 
-	jwtToken := jwt.NewWithClaims(jwt.GetSigningMethod(jwt.SigningMethodRS256.Name), claims)
-	jwtToken.Header["kid"] = keyID
-	accessToken, _ := jwtToken.SignedString(privateKey)
-
+	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
+	if err != nil {
+		panic(err)
+	}
 	testClient.(*DefaultClient).revocationFilter.Put(bytes.NewBufferString(accessToken).Bytes())
 
-	claims, err := testClient.ValidateAndParseClaims(accessToken)
+	claims, err = testClient.ValidateAndParseClaims(accessToken)
 
 	assert.NotNil(t, err, "revoked token validation should not be granted on role validation")
 	assert.Nil(t, claims, "claims should be nil")
@@ -466,10 +504,10 @@ func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
 		Roles:        userData.Roles,
 		Permissions:  userData.Permissions,
 		JusticeFlags: userData.JusticeFlags,
-		StandardClaims: jwt.StandardClaims{
-			Subject:   userData.UserID,
-			IssuedAt:  tNow.Unix(),
-			ExpiresAt: tNow.Add(15 * time.Minute).Unix(),
+		Claims: jwt.Claims{
+			Subject:  userData.UserID,
+			IssuedAt: jwt.NewNumericDate(tNow),
+			Expiry:   jwt.NewNumericDate(tNow.Add(15 * time.Minute)),
 		},
 	}
 }
