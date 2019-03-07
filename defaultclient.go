@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/AccelByte/bloom"
-	"github.com/patrickmn/go-cache"
+	cache "github.com/patrickmn/go-cache"
 )
 
 // JFlags constants

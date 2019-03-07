@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"github.com/AccelByte/bloom"
-	"github.com/AccelByte/go-jose"
+	jose "github.com/AccelByte/go-jose"
 	"github.com/AccelByte/go-jose/jwt"
-	"github.com/patrickmn/go-cache"
+	cache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
 )
 
