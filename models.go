@@ -136,6 +136,13 @@ type JWTClaims struct {
 	jwt.Claims
 }
 
+// Validate checks if the JWT is still valid
+func (c *JWTClaims) Validate() error {
+	return c.Claims.Validate(jwt.Expected{
+		Time: time.Now().UTC(),
+	})
+}
+
 // RevocationList contains revoked user and token
 type RevocationList struct {
 	RevokedTokens bloom.FilterJSON           `json:"revoked_tokens"`
