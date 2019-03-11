@@ -239,6 +239,27 @@ func TestClientValidateAndParseClaims(t *testing.T) {
 	assert.NotNil(t, claims, "claims should not nil")
 }
 
+func TestClientValidateExpiredToken(t *testing.T) {
+	grantedPermission := Permission{
+		Resource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
+		Action:   ActionCreate | ActionRead | ActionUpdate | ActionDelete,
+	}
+	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Permissions: []Permission{grantedPermission}}
+
+	claims := generateClaims(t, userData)
+	claims.Expiry = jwt.NewNumericDate(time.Now().UTC().Add(-time.Minute))
+	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
+	if err != nil {
+		panic(err)
+	}
+
+	claims, errValidateAndParseClaims := testClient.ValidateAndParseClaims(accessToken)
+
+	assert.Error(t, errValidateAndParseClaims, "access token should be invalid")
+	assert.Nil(t, claims, "claims should be nil")
+}
+
 func TestClientValidatePermissionResourceString(t *testing.T) {
 	type testTable struct {
 		requiredResource string
