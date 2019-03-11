@@ -19,6 +19,7 @@ package iam
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -50,7 +51,7 @@ func (client *DefaultClient) validateAccessToken(accessToken string) (bool, erro
 
 func (client *DefaultClient) validateJWT(token string) (*JWTClaims, error) {
 	if token == "" {
-		return nil, fmt.Errorf("token is empty")
+		return nil, errors.New("token is empty")
 	}
 
 	var jwtClaims = JWTClaims{}
@@ -60,12 +61,21 @@ func (client *DefaultClient) validateJWT(token string) (*JWTClaims, error) {
 		return nil, err
 	}
 
+	if webToken.Headers[0].KeyID == "" {
+		return nil, errors.New("invalid token signature key ID")
+	}
+
 	publicKey, err := client.getPublicKey(webToken.Headers[0].KeyID)
 	if err != nil {
 		return nil, err
 	}
 
 	err = webToken.Claims(publicKey, &jwtClaims)
+	if err != nil {
+		return nil, err
+	}
+
+	err = jwtClaims.Validate()
 	if err != nil {
 		return nil, err
 	}
