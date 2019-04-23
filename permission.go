@@ -27,6 +27,8 @@ import (
 	cache "github.com/patrickmn/go-cache"
 )
 
+var errRoleNotFound = errors.New("role not found")
+
 func (client *DefaultClient) permissionAllowed(grantedPermissions []Permission, requiredPermission Permission) bool {
 	for _, grantedPermission := range grantedPermissions {
 		grantedAction := grantedPermission.Action
@@ -117,7 +119,7 @@ func (client *DefaultClient) getRolePermission(roleID string) ([]Permission, err
 	case http.StatusForbidden:
 		return nil, errors.New("access forbidden, make sure you have client creds that has sufficient permission")
 	case http.StatusNotFound:
-		return nil, errors.New("role not found")
+		return nil, errRoleNotFound
 	default:
 		return nil, errors.New("unexpected error: " + http.StatusText(resp.StatusCode))
 	}
