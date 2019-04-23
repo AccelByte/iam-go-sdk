@@ -178,7 +178,10 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 	for _, roleID := range claims.Roles {
 		grantedRolePermissions, err := client.getRolePermission(roleID)
 		if err != nil {
-			continue
+			if err == errRoleNotFound {
+				continue
+			}
+			return false, err
 		}
 		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims)
 		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
