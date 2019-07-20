@@ -92,6 +92,18 @@ permissionResource["{userId}"] = "example"
 client.ValidatePermission(claims, iam.Permission{Resource:"NAMESPACE:{namespace}:USER:{userId}", Action:4}, permissionResource)
 ```
 
+### Validating Audience and Scope
+
+Validate audience and scope from token owner with those owned by client
+
+```go
+_ = client.ValidateAudienceScope(claims *JWTClaims, scope string) error
+```
+
+**Note**
+
+Required client access token to get client information (client base URI)
+
 ### Health check
 
 Whenever the IAM service went unhealthy, the client will know by detecting if any of the automated refresh goroutines has error.

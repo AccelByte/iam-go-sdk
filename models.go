@@ -133,6 +133,9 @@ type JWTClaims struct {
 	Permissions  []Permission `json:"permissions"`
 	Bans         []JWTBan     `json:"bans"`
 	JusticeFlags int          `json:"jflgs"`
+	Scope        string       `json:"scope"`
+	Country      string       `json:"country"`
+	ClientID     string       `json:"client_id"`
 	jwt.Claims
 }
 
