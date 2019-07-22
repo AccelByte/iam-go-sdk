@@ -18,13 +18,20 @@ package iam
 
 import (
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/AccelByte/bloom"
-	cache "github.com/patrickmn/go-cache"
+	"github.com/patrickmn/go-cache"
+)
+
+var (
+	baseURI string
 )
 
 // JFlags constants
@@ -35,11 +42,12 @@ const (
 )
 
 const (
-	jwksPath           = "/oauth/jwks"
-	grantPath          = "/oauth/token"
-	revocationListPath = "/oauth/revocationlist"
-	verifyPath         = "/oauth/verify"
-	getRolePath        = "/roles"
+	jwksPath              = "/oauth/jwks"
+	grantPath             = "/oauth/token"
+	revocationListPath    = "/oauth/revocationlist"
+	verifyPath            = "/oauth/verify"
+	getRolePath           = "/roles"
+	clientInformationPath = "/v3/admin/namespaces/%s/clients/%s"
 
 	defaultTokenRefreshRate              = 0.8
 	maxBackOffTime                       = 65 * time.Second
@@ -241,4 +249,72 @@ func (client *DefaultClient) HealthCheck() bool {
 		return false
 	}
 	return true
+}
+
+// ValidateAudienceScope validate audience and scope of user access token
+func (client *DefaultClient) ValidateAudienceScope(claims *JWTClaims, scope string) error {
+	if baseURI == "" {
+		err := client.getClientInformation(claims.Namespace)
+		if err != nil {
+			return err
+		}
+	}
+
+	if scope != claims.Scope {
+		return errors.New("scope isn't valid")
+	}
+
+	var isValid = false
+	for _, reqAud := range claims.Audience {
+		if reqAud == baseURI {
+			isValid = true
+		}
+	}
+
+	if !isValid {
+		return errors.New("audience isn't valid")
+	}
+
+	return nil
+}
+
+// getClientInformation get client base URI
+// need client access token for authorization
+func (client *DefaultClient) getClientInformation(namespace string) (err error) {
+
+	clientInformation := struct {
+		BaseURI string `json:"BaseURI"`
+	}{}
+
+	path := fmt.Sprintf(clientInformationPath, namespace, client.config.ClientID)
+	req, err := http.NewRequest(http.MethodGet, client.config.BaseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("unable to create new http request: %v", err)
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken)
+	httpClient := http.Client{}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("unable to do http request: %v", err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("unable to read body response: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unable to get client information, error code : %d, error message : %s",
+			resp.StatusCode, string(bodyBytes))
+	}
+
+	err = json.Unmarshal(bodyBytes, &clientInformation)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal body: %v", err)
+	}
+
+	baseURI = clientInformation.BaseURI
+
+	return nil
 }

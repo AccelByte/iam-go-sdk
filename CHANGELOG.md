@@ -1,3 +1,13 @@
+Release v1.0.4 (2019-07-22)
+===========================
+### Added
+1. Add audience and scope validation
+
+Release v1.0.3 (2019-04-23)
+===========================
+### Fixed
+1. Fixed misconfiguration during permission validation
+
 Release v1.0.2 (2019-03-11)
 ===========================
 ### Fixed

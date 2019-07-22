@@ -142,3 +142,16 @@ func (client *MockClient) HasBan(claims *JWTClaims, banType string) bool {
 func (client *MockClient) HealthCheck() bool {
 	return client.Healthy
 }
+
+// ValidateAudienceScope gets user anonymous status on access token
+func (client *MockClient) ValidateAudienceScope(claims *JWTClaims, scope string) error {
+	if scope == "" {
+		return errors.New("scope isn't valid")
+	}
+
+	if len(claims.Audience) == 0 {
+		return errors.New("audience isn't valid")
+	}
+
+	return nil
+}
