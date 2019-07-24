@@ -1,4 +1,14 @@
-Release v1.0.4 (2019-07-22)
+Release v1.0.6 (2019-07-25)
+===========================
+### Changed
+1. Separate audience and scope validation 
+
+Release v1.0.5 (2019-07-24)
+===========================
+### Fixed
+1. Fix scope validation
+
+Release v1.0.4 (2019-07-23)
 ===========================
 ### Added
 1. Add audience and scope validation

@@ -92,17 +92,25 @@ permissionResource["{userId}"] = "example"
 client.ValidatePermission(claims, iam.Permission{Resource:"NAMESPACE:{namespace}:USER:{userId}", Action:4}, permissionResource)
 ```
 
-### Validating Audience and Scope
+### Validating Audience
 
-Validate audience and scope from token owner with those owned by client
+Validate audience from token owner with client baseURI
 
 ```go
-_ = client.ValidateAudienceScope(claims *JWTClaims, scope string) error
+_ = client.ValidateAudience(claims *JWTClaims) error
 ```
 
 **Note**
 
 Required client access token to get client information (client base URI)
+
+### Validating Scope
+
+Validate scope from token owner with client scope
+
+```go
+_ = client.ValidateScope(claims *JWTClaims, scope string) error
+```
 
 ### Health check
 
