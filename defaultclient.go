@@ -54,6 +54,8 @@ const (
 	defaultRoleCacheTime                 = 60 * time.Second
 	defaultJWKSRefreshInterval           = 60 * time.Second
 	defaultRevocationListRefreshInterval = 60 * time.Second
+
+	scopeSeparator = " "
 )
 
 // Config contains IAM configurations
@@ -252,7 +254,7 @@ func (client *DefaultClient) HealthCheck() bool {
 }
 
 // ValidateAudienceScope validate audience and scope of user access token
-func (client *DefaultClient) ValidateAudienceScope(claims *JWTClaims, scope string) error {
+func (client *DefaultClient) ValidateAudienceScope(claims *JWTClaims, reqScope string) error {
 	if baseURI == "" {
 		err := client.getClientInformation(claims.Namespace)
 		if err != nil {
@@ -260,11 +262,20 @@ func (client *DefaultClient) ValidateAudienceScope(claims *JWTClaims, scope stri
 		}
 	}
 
-	if scope != claims.Scope {
+	scopes := strings.Split(claims.Scope, scopeSeparator)
+
+	var isValid = false
+	for _, scope := range scopes {
+		if reqScope == scope {
+			isValid = true
+		}
+	}
+
+	if !isValid {
 		return errors.New("scope isn't valid")
 	}
 
-	var isValid = false
+	isValid = false
 	for _, reqAud := range claims.Audience {
 		if reqAud == baseURI {
 			isValid = true
