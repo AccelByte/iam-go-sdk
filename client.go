@@ -80,6 +80,9 @@ type Client interface {
 	// HealthCheck lets caller know the health of the IAM client
 	HealthCheck() bool
 
-	// ValidateAudienceScope validate audience and scope of user access token
-	ValidateAudienceScope(claims *JWTClaims, scope string) error
+	// ValidateAudience validate audience of user access token
+	ValidateAudience(claims *JWTClaims) error
+
+	// ValidateScope validate scope of user access token
+	ValidateScope(claims *JWTClaims, scope string) error
 }

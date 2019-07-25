@@ -30,10 +30,6 @@ import (
 	"github.com/patrickmn/go-cache"
 )
 
-var (
-	baseURI string
-)
-
 // JFlags constants
 const (
 	UserStatusEmailVerified = 1
@@ -55,7 +51,9 @@ const (
 	defaultJWKSRefreshInterval           = 60 * time.Second
 	defaultRevocationListRefreshInterval = 60 * time.Second
 
-	scopeSeparator = " "
+	baseURIKey             = "baseURI"
+	baseURICacheExpiration = 1 * time.Minute
+	scopeSeparator         = " "
 )
 
 // Config contains IAM configurations
@@ -82,6 +80,7 @@ type DefaultClient struct {
 	revocationListRefreshError error
 	tokenRefreshError          error
 	remoteTokenValidation      func(accessToken string) (bool, error)
+	baseURICache               *cache.Cache
 }
 
 // NewDefaultClient creates new IAM DefaultClient
@@ -101,6 +100,8 @@ func NewDefaultClient(config *Config) Client {
 		rolePermissionCache: cache.New(config.RolesCacheExpirationTime, 2*config.RolesCacheExpirationTime),
 	}
 	client.remoteTokenValidation = client.validateAccessToken
+
+	client.baseURICache = cache.New(baseURICacheExpiration, baseURICacheExpiration)
 
 	return client
 }
@@ -253,37 +254,46 @@ func (client *DefaultClient) HealthCheck() bool {
 	return true
 }
 
-// ValidateAudienceScope validate audience and scope of user access token
-func (client *DefaultClient) ValidateAudienceScope(claims *JWTClaims, reqScope string) error {
-	if baseURI == "" {
+// ValidateAudience validate audience of user access token
+func (client *DefaultClient) ValidateAudience(claims *JWTClaims) error {
+	baseURI, found := client.baseURICache.Get(baseURIKey)
+	if !found {
 		err := client.getClientInformation(claims.Namespace)
 		if err != nil {
 			return err
 		}
+		baseURI, _ = client.baseURICache.Get(baseURIKey)
 	}
 
+	isValid := false
+	for _, reqAud := range claims.Audience {
+		if reqAud == baseURI {
+			isValid = true
+			break
+		}
+	}
+
+	if !isValid {
+		return errors.New("audience isn't valid")
+	}
+
+	return nil
+}
+
+// ValidateScope validate scope of user access token
+func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string) error {
 	scopes := strings.Split(claims.Scope, scopeSeparator)
 
 	var isValid = false
 	for _, scope := range scopes {
 		if reqScope == scope {
 			isValid = true
+			break
 		}
 	}
 
 	if !isValid {
 		return errors.New("scope isn't valid")
-	}
-
-	isValid = false
-	for _, reqAud := range claims.Audience {
-		if reqAud == baseURI {
-			isValid = true
-		}
-	}
-
-	if !isValid {
-		return errors.New("audience isn't valid")
 	}
 
 	return nil
@@ -316,7 +326,7 @@ func (client *DefaultClient) getClientInformation(namespace string) (err error) 
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unable to get client information, error code : %d, error message : %s",
+		return fmt.Errorf("unable to get client information : error code : %d, error message : %s",
 			resp.StatusCode, string(bodyBytes))
 	}
 
@@ -325,7 +335,7 @@ func (client *DefaultClient) getClientInformation(namespace string) (err error) 
 		return fmt.Errorf("unable to unmarshal body: %v", err)
 	}
 
-	baseURI = clientInformation.BaseURI
+	client.baseURICache.Set(baseURIKey, clientInformation.BaseURI, cache.DefaultExpiration)
 
 	return nil
 }

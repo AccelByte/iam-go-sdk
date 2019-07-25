@@ -143,14 +143,20 @@ func (client *MockClient) HealthCheck() bool {
 	return client.Healthy
 }
 
-// ValidateAudienceScope gets user anonymous status on access token
-func (client *MockClient) ValidateAudienceScope(claims *JWTClaims, scope string) error {
-	if scope == "" {
-		return errors.New("scope isn't valid")
-	}
+// ValidateAudience gets user anonymous status on access token
+func (client *MockClient) ValidateAudience(claims *JWTClaims) error {
 
 	if len(claims.Audience) == 0 {
 		return errors.New("audience isn't valid")
+	}
+
+	return nil
+}
+
+// ValidateScope gets user anonymous status on access token
+func (client *MockClient) ValidateScope(claims *JWTClaims, scope string) error {
+	if scope == "" {
+		return errors.New("scope isn't valid")
 	}
 
 	return nil
