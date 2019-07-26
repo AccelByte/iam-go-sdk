@@ -26,6 +26,7 @@ import (
 const (
 	MockUnauthorized = "unauthorized"
 	MockForbidden    = "forbidden"
+	MockAudience     = "http://example.com"
 )
 
 // MockClient define mock oauth client config
@@ -71,6 +72,8 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string) (*JWTClaims
 		Claims:    jwt.Claims{Subject: accessToken},
 		Namespace: "MOCK",
 	}
+
+	claims.Audience = append(claims.Audience, MockAudience)
 
 	switch accessToken {
 	case MockUnauthorized:
@@ -145,7 +148,6 @@ func (client *MockClient) HealthCheck() bool {
 
 // ValidateAudience gets user anonymous status on access token
 func (client *MockClient) ValidateAudience(claims *JWTClaims) error {
-
 	if len(claims.Audience) == 0 {
 		return errors.New("audience isn't valid")
 	}
