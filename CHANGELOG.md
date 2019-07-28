@@ -1,3 +1,9 @@
+Release v1.1.0 (2019-07-28)
+===========================
+### Added
+1. No checking if no `aud` field found in the token.
+2. Write unit tests for making sure `ValidateAudience` works as expected.
+
 Release v1.0.6 (2019-07-25)
 ===========================
 ### Changed

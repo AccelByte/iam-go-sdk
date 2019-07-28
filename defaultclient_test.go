@@ -24,6 +24,11 @@ import (
 	"testing"
 	"time"
 
+	"net/http"
+
+	"io/ioutil"
+	"strings"
+
 	"github.com/AccelByte/bloom"
 	jose "github.com/AccelByte/go-jose"
 	"github.com/AccelByte/go-jose/jwt"
@@ -87,6 +92,7 @@ func init() {
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
 		localValidationActive: true,
+		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 	}
 
 	var err error
@@ -137,7 +143,7 @@ func mustUnmarshalRSA(data string) *rsa.PrivateKey {
 	panic("key is not of type *rsa.PrivateKey")
 }
 
-func TestClientUserEmailVerificationStatus(t *testing.T) {
+func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
 	type testTable struct {
 		justiceFlag              int
 		expectedValidationResult bool
@@ -164,7 +170,7 @@ func TestClientUserEmailVerificationStatus(t *testing.T) {
 	}
 }
 
-func TestClientUserPhoneVerificationStatus(t *testing.T) {
+func Test_DefaultClientUserPhoneVerificationStatus(t *testing.T) {
 	type testTable struct {
 		justiceFlag              int
 		expectedValidationResult bool
@@ -191,7 +197,7 @@ func TestClientUserPhoneVerificationStatus(t *testing.T) {
 	}
 }
 
-func TestClientUserAnonymousStatus(t *testing.T) {
+func Test_DefaultClientUserAnonymousStatus(t *testing.T) {
 	type testTable struct {
 		justiceFlag              int
 		expectedValidationResult bool
@@ -219,7 +225,7 @@ func TestClientUserAnonymousStatus(t *testing.T) {
 	}
 }
 
-func TestClientValidateAndParseClaims(t *testing.T) {
+func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
 	grantedPermission := Permission{
 		Resource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
 		Action:   ActionCreate | ActionRead | ActionUpdate | ActionDelete,
@@ -239,7 +245,7 @@ func TestClientValidateAndParseClaims(t *testing.T) {
 	assert.NotNil(t, claims, "claims should not nil")
 }
 
-func TestClientValidateExpiredToken(t *testing.T) {
+func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
 	grantedPermission := Permission{
 		Resource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
 		Action:   ActionCreate | ActionRead | ActionUpdate | ActionDelete,
@@ -260,7 +266,7 @@ func TestClientValidateExpiredToken(t *testing.T) {
 	assert.Nil(t, claims, "claims should be nil")
 }
 
-func TestClientValidatePermissionResourceString(t *testing.T) {
+func Test_DefaultClientValidatePermission(t *testing.T) {
 	type testTable struct {
 		requiredResource string
 		grantedResource  string
@@ -327,7 +333,7 @@ func TestClientValidatePermissionResourceString(t *testing.T) {
 	}
 }
 
-func TestClientValidatePermissionResourceStringOnRole(t *testing.T) {
+func Test_DefaultClientValidatePermission_ResourceStringOnRole(t *testing.T) {
 	type testTable struct {
 		requiredResource string
 		expectedResult   bool
@@ -358,7 +364,7 @@ func TestClientValidatePermissionResourceStringOnRole(t *testing.T) {
 	}
 }
 
-func TestClientValidatePermissionActionBitMask(t *testing.T) {
+func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
 	type testTable struct {
 		requiredAction int
 		grantedAction  int
@@ -425,7 +431,7 @@ func TestClientValidatePermissionActionBitMask(t *testing.T) {
 	}
 }
 
-func TestClientValidateRoleIDExist(t *testing.T) {
+func Test_DefaultClientValidateRoleID(t *testing.T) {
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
 
@@ -434,7 +440,7 @@ func TestClientValidateRoleIDExist(t *testing.T) {
 	assert.True(t, validationResult, "resource roles id validation does not match")
 }
 
-func TestClientValidateRoleIDNotExist(t *testing.T) {
+func Test_DefaultClientValidateRoleID_NotExist(t *testing.T) {
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
 
@@ -443,7 +449,7 @@ func TestClientValidateRoleIDNotExist(t *testing.T) {
 	assert.False(t, validationResult, "resource roles id validation does not match")
 }
 
-func TestVerifyAccessTokenValidToken(t *testing.T) {
+func Test_DefaultClientValidateAccessToken(t *testing.T) {
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Namespace: "foo"}
 	claims := generateClaims(t, userData)
 
@@ -457,7 +463,7 @@ func TestVerifyAccessTokenValidToken(t *testing.T) {
 	assert.True(t, validationResult, "valid direct verification should be granted")
 }
 
-func TestVerifyAccessTokenInvalidToken(t *testing.T) {
+func Test_DefaultClientValidateAccessToken_InvalidToken(t *testing.T) {
 	validationResult, err := testClient.ValidateAccessToken(invalid)
 	if err != nil {
 		t.Fatalf("unable to validate : %v", err)
@@ -465,7 +471,7 @@ func TestVerifyAccessTokenInvalidToken(t *testing.T) {
 	assert.False(t, validationResult, "invalid direct verification should not be granted")
 }
 
-func TestValidateRevokedUser(t *testing.T) {
+func Test_DefaultClientValidateAndParseClaims_RevokedUser(t *testing.T) {
 	userData := &tokenUserData{UserID: "e71d22e2b270449c90d4c15b89c3f994",
 		Namespace:    "foo",
 		Permissions:  []Permission{{Resource: "RESOURCE", Action: ActionCreate | ActionRead | ActionUpdate | ActionDelete}},
@@ -487,7 +493,7 @@ func TestValidateRevokedUser(t *testing.T) {
 
 }
 
-func TestValidateRevokedToken(t *testing.T) {
+func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
 	userData := &tokenUserData{UserID: "257abbea27b24247daae0702c8a200a1",
 		Namespace:    "foo",
 		Permissions:  []Permission{{Resource: "RESOURCE", Action: ActionCreate | ActionRead | ActionUpdate | ActionDelete}},
@@ -508,12 +514,211 @@ func TestValidateRevokedToken(t *testing.T) {
 	assert.Equal(t, err.Error(), "token has been revoked", "error message didn't match")
 }
 
-func TestTokenHasBan(t *testing.T) {
+func Test_DefaultClientHasBan(t *testing.T) {
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
 	claims.Bans = append(claims.Bans, JWTBan{Ban: "TEST_BAN"})
 
 	assert.True(t, testClient.HasBan(claims, "TEST_BAN"), "ban not found")
+}
+
+// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+func Test_ValidateAudience(t *testing.T) {
+	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
+	claims := generateClaims(t, userData)
+	claims.Audience = append(claims.Audience, "http://example.net")
+
+	mockHTTPClient := &httpClientMock{
+		doMock: func(req *http.Request) (*http.Response, error) {
+			r := ioutil.NopCloser(strings.NewReader(`
+{
+   "ClientID": "5a2cf6407d6349c7a75264c2c1d04a10",
+   "ClientName": "test client",
+   "Namespace": "accelbyte",
+   "RedirectUri": "http://127.0.0.1",
+   "OauthClientType": "Confidential",
+   "Audiences": null,
+   "BaseUri": "http://example.net",
+   "CreatedAt": "2019-07-27T07:39:31.541500915Z",
+   "ModifiedAt": "0001-01-01T00:00:00Z",
+   "Scopes": null
+}
+`))
+			return &http.Response{
+				Status:     http.StatusText(http.StatusOK),
+				StatusCode: http.StatusOK,
+				Body:       r,
+				Header:     http.Header{},
+			}, nil
+		},
+	}
+
+	mockClient := &DefaultClient{
+		config:                &Config{ClientID: "a952b5c054de468bab9e0b4802057f11"},
+		keys:                  make(map[string]*rsa.PublicKey),
+		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		revocationFilter:      bloom.New(100),
+		revokedUsers:          make(map[string]time.Time),
+		localValidationActive: true,
+		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		httpClient:            mockHTTPClient,
+	}
+
+	err := mockClient.ValidateAudience(claims)
+
+	assert.Nil(t, err)
+}
+
+// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
+	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
+	claims := generateClaims(t, userData)
+	claims.Audience = append(claims.Audience, "http://testexample.net")
+
+	mockHTTPClient := &httpClientMock{
+		doMock: func(req *http.Request) (*http.Response, error) {
+			r := ioutil.NopCloser(strings.NewReader(`
+{
+   "ClientID": "5a2cf6407d6349c7a75264c2c1d04a10",
+   "ClientName": "test client",
+   "Namespace": "accelbyte",
+   "RedirectUri": "http://127.0.0.1",
+   "OauthClientType": "Confidential",
+   "Audiences": null,
+   "BaseUri": "http://example.net",
+   "CreatedAt": "2019-07-27T07:39:31.541500915Z",
+   "ModifiedAt": "0001-01-01T00:00:00Z",
+   "Scopes": null
+}
+`))
+			return &http.Response{
+				Status:     http.StatusText(http.StatusOK),
+				StatusCode: http.StatusOK,
+				Body:       r,
+				Header:     http.Header{},
+			}, nil
+		},
+	}
+
+	mockClient := &DefaultClient{
+		config:                &Config{ClientID: "a952b5c054de468bab9e0b4802057f11"},
+		keys:                  make(map[string]*rsa.PublicKey),
+		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		revocationFilter:      bloom.New(100),
+		revokedUsers:          make(map[string]time.Time),
+		localValidationActive: true,
+		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		httpClient:            mockHTTPClient,
+	}
+
+	err := mockClient.ValidateAudience(claims)
+
+	assert.NotNil(t, err)
+}
+
+// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+func Test_ValidateAudience_ClientNotFound(t *testing.T) {
+	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole},
+		Namespace: "accelbyte"}
+	claims := generateClaims(t, userData)
+	claims.Audience = append(claims.Audience, "http://example.net")
+
+	mockHTTPClient := &httpClientMock{
+		doMock: func(req *http.Request) (*http.Response, error) {
+			r := ioutil.NopCloser(strings.NewReader(`
+{
+	"ErrorCode": "106422",
+	"ErrorMessage:"client with id a952b5c054de468bab9e0b4802057f11 in namespace accelbyte was not found"
+}
+`))
+			return &http.Response{
+				Status:     http.StatusText(http.StatusOK),
+				StatusCode: http.StatusOK,
+				Body:       r,
+				Header:     http.Header{},
+			}, nil
+		},
+	}
+
+	mockClient := &DefaultClient{
+		config:                &Config{ClientID: "a952b5c054de468bab9e0b4802057f11"},
+		keys:                  make(map[string]*rsa.PublicKey),
+		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		revocationFilter:      bloom.New(100),
+		revokedUsers:          make(map[string]time.Time),
+		localValidationActive: true,
+		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		httpClient:            mockHTTPClient,
+	}
+
+	err := mockClient.ValidateAudience(claims)
+
+	assert.NotNil(t, err)
+}
+
+// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
+	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole},
+		Namespace: "accelbyte"}
+	claims := generateClaims(t, userData)
+	mockHTTPClient := &httpClientMock{
+		doMock: func(req *http.Request) (*http.Response, error) {
+			r := ioutil.NopCloser(strings.NewReader(`
+{
+   "ClientID": "5a2cf6407d6349c7a75264c2c1d04a10",
+   "ClientName": "test client",
+   "Namespace": "accelbyte",
+   "RedirectUri": "http://127.0.0.1",
+   "OauthClientType": "Confidential",
+   "Audiences": null,
+   "BaseUri": "http://example.net",
+   "CreatedAt": "2019-07-27T07:39:31.541500915Z",
+   "ModifiedAt": "0001-01-01T00:00:00Z",
+   "Scopes": null
+}
+`))
+			return &http.Response{
+				Status:     http.StatusText(http.StatusOK),
+				StatusCode: http.StatusOK,
+				Body:       r,
+				Header:     http.Header{},
+			}, nil
+		},
+	}
+
+	mockClient := &DefaultClient{
+		config:                &Config{ClientID: "a952b5c054de468bab9e0b4802057f11"},
+		keys:                  make(map[string]*rsa.PublicKey),
+		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		revocationFilter:      bloom.New(100),
+		revokedUsers:          make(map[string]time.Time),
+		localValidationActive: true,
+		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		httpClient:            mockHTTPClient,
+	}
+
+	err := mockClient.ValidateAudience(claims)
+
+	assert.Nil(t, err)
+}
+
+// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+// To prevent accidentally passing an empty claim.
+func Test_ValidateAudience_ClaimsIsNil(t *testing.T) {
+	mockClient := &DefaultClient{
+		config:                &Config{ClientID: "a952b5c054de468bab9e0b4802057f11"},
+		keys:                  make(map[string]*rsa.PublicKey),
+		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		revocationFilter:      bloom.New(100),
+		revokedUsers:          make(map[string]time.Time),
+		localValidationActive: true,
+		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		httpClient:            &http.Client{},
+	}
+
+	err := mockClient.ValidateAudience(nil)
+
+	assert.NotNil(t, err)
 }
 
 func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
@@ -531,4 +736,13 @@ func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
 			Expiry:   jwt.NewNumericDate(tNow.Add(15 * time.Minute)),
 		},
 	}
+}
+
+type httpClientMock struct {
+	http.Client
+	doMock func(req *http.Request) (*http.Response, error)
+}
+
+func (c *httpClientMock) Do(req *http.Request) (*http.Response, error) {
+	return c.doMock(req)
 }
