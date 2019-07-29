@@ -94,7 +94,7 @@ client.ValidatePermission(claims, iam.Permission{Resource:"NAMESPACE:{namespace}
 
 ### Validating Audience
 
-Validate audience from token owner with client baseURI
+Validate audience from the token owner with client's base URI
 
 ```go
 _ = client.ValidateAudience(claims *JWTClaims) error

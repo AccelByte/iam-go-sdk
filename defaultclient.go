@@ -81,6 +81,13 @@ type DefaultClient struct {
 	tokenRefreshError          error
 	remoteTokenValidation      func(accessToken string) (bool, error)
 	baseURICache               *cache.Cache
+	// for easily mocking the HTTP call
+	httpClient HTTPClient
+}
+
+// HTTPClient is an interface for http.Client. The purpose for having this so we could easily mock the HTTP call.
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
 // NewDefaultClient creates new IAM DefaultClient
@@ -102,6 +109,7 @@ func NewDefaultClient(config *Config) Client {
 	client.remoteTokenValidation = client.validateAccessToken
 
 	client.baseURICache = cache.New(baseURICacheExpiration, baseURICacheExpiration)
+	client.httpClient = &http.Client{}
 
 	return client
 }
@@ -256,25 +264,36 @@ func (client *DefaultClient) HealthCheck() bool {
 
 // ValidateAudience validate audience of user access token
 func (client *DefaultClient) ValidateAudience(claims *JWTClaims) error {
+	if claims == nil {
+		return errors.New("claims is nil")
+	}
+	// no need to check if no audience found in the claims. https://tools.ietf.org/html/rfc7519#section-4.1.3
+	if claims.Audience == nil {
+		fmt.Printf("[IAM-Go-SDK] No audience found in the token. Skipping the audience validation\n")
+		return nil
+	}
 	baseURI, found := client.baseURICache.Get(baseURIKey)
 	if !found {
-		err := client.getClientInformation(claims.Namespace)
+		path := fmt.Sprintf(clientInformationPath, claims.Namespace, client.config.ClientID)
+		getClientInformationURL := client.config.BaseURL + path
+		err := client.getClientInformation(getClientInformationURL)
 		if err != nil {
+			fmt.Printf("[IAM-Go-SDK] get client detail returns error: %v\n", err)
 			return err
 		}
 		baseURI, _ = client.baseURICache.Get(baseURIKey)
 	}
 
-	isValid := false
+	isAllowed := false
 	for _, reqAud := range claims.Audience {
 		if reqAud == baseURI {
-			isValid = true
+			isAllowed = true
 			break
 		}
 	}
 
-	if !isValid {
-		return errors.New("audience isn't valid")
+	if !isAllowed {
+		return errors.New("audience doesn't match the client's base uri. access denied")
 	}
 
 	return nil
@@ -293,7 +312,7 @@ func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string) e
 	}
 
 	if !isValid {
-		return errors.New("scope isn't valid")
+		return errors.New("insufficient scope")
 	}
 
 	return nil
@@ -301,21 +320,19 @@ func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string) e
 
 // getClientInformation get client base URI
 // need client access token for authorization
-func (client *DefaultClient) getClientInformation(namespace string) (err error) {
+func (client *DefaultClient) getClientInformation(getClientInformationURL string) (err error) {
 
 	clientInformation := struct {
-		BaseURI string `json:"BaseURI"`
+		BaseURI string `json:"BaseUri"`
 	}{}
 
-	path := fmt.Sprintf(clientInformationPath, namespace, client.config.ClientID)
-	req, err := http.NewRequest(http.MethodGet, client.config.BaseURL+path, nil)
+	req, err := http.NewRequest(http.MethodGet, getClientInformationURL, nil)
 	if err != nil {
 		return fmt.Errorf("unable to create new http request: %v", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken)
-	httpClient := http.Client{}
-	resp, err := httpClient.Do(req)
+	resp, err := client.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("unable to do http request: %v", err)
 	}
