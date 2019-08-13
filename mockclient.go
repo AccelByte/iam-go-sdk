@@ -17,8 +17,6 @@
 package iam
 
 import (
-	"errors"
-
 	"github.com/AccelByte/go-jose/jwt"
 )
 
@@ -77,7 +75,7 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string) (*JWTClaims
 
 	switch accessToken {
 	case MockUnauthorized:
-		return nil, errors.New("invalid access token")
+		return nil, errUnauthorized
 	case MockForbidden:
 		claims.Roles = append(claims.Roles, MockForbidden)
 		claims.Permissions = append(claims.Permissions,
@@ -149,7 +147,7 @@ func (client *MockClient) HealthCheck() bool {
 // ValidateAudience gets user anonymous status on access token
 func (client *MockClient) ValidateAudience(claims *JWTClaims) error {
 	if len(claims.Audience) == 0 {
-		return errors.New("audience isn't valid")
+		return errInvalidAud
 	}
 
 	return nil
@@ -158,7 +156,7 @@ func (client *MockClient) ValidateAudience(claims *JWTClaims) error {
 // ValidateScope gets user anonymous status on access token
 func (client *MockClient) ValidateScope(claims *JWTClaims, scope string) error {
 	if scope == "" {
-		return errors.New("scope isn't valid")
+		return errInvalidScope
 	}
 
 	return nil

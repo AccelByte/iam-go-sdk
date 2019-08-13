@@ -33,6 +33,7 @@ import (
 	jose "github.com/AccelByte/go-jose"
 	"github.com/AccelByte/go-jose/jwt"
 	cache "github.com/patrickmn/go-cache"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -489,7 +490,7 @@ func Test_DefaultClientValidateAndParseClaims_RevokedUser(t *testing.T) {
 
 	assert.NotNil(t, err, "revoked user validation should not be granted on permission validation")
 	assert.Nil(t, claims, "claims should be nil")
-	assert.Equal(t, err.Error(), "user has been revoked", "error message didn't match")
+	assert.Equal(t, errUserRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
 
 }
 
@@ -511,7 +512,7 @@ func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
 
 	assert.NotNil(t, err, "revoked token validation should not be granted on role validation")
 	assert.Nil(t, claims, "claims should be nil")
-	assert.Equal(t, err.Error(), "token has been revoked", "error message didn't match")
+	assert.Equal(t, errTokenRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
 }
 
 func Test_DefaultClientHasBan(t *testing.T) {

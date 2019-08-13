@@ -1,3 +1,10 @@
+Release v1.1.1 (2019-07-28)
+===========================
+### Added
+1. Enable automatically refresh the token when receiving 401 when calling IAM service
+2. Added retry when receiving 500 from IAM
+3. Added debug flag in config to toggle logging debug messages
+
 Release v1.1.0 (2019-07-28)
 ===========================
 ### Added
