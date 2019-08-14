@@ -19,65 +19,95 @@ package iam
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/AccelByte/go-jose/jwt"
+	"github.com/cenkalti/backoff"
+	"github.com/pkg/errors"
 )
 
 func (client *DefaultClient) validateAccessToken(accessToken string) (bool, error) {
 	form := url.Values{}
 	form.Add("token", accessToken)
+
 	req, err := http.NewRequest(http.MethodPost, client.config.BaseURL+verifyPath, bytes.NewBufferString(form.Encode()))
 	if err != nil {
-		return false, fmt.Errorf("unable to create new http request %v", err)
+		return false, errors.Wrap(err, "validateAccessToken: unable to create new HTTP request")
 	}
+
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth(client.config.ClientID, client.config.ClientSecret)
-	httpClient := http.Client{}
-	resp, err := httpClient.Do(req)
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+	resp := &http.Response{}
+
+	err = backoff.
+		Retry(
+			func() error {
+				var e error
+
+				resp, e = client.httpClient.Do(req)
+				if e != nil {
+					return backoff.Permanent(e)
+				}
+
+				if resp.StatusCode >= http.StatusInternalServerError {
+					return e
+				}
+
+				return nil
+			},
+			b,
+		)
+
 	if err != nil {
-		return false, fmt.Errorf("unable to do http request %v", err)
+		return false, errors.Wrap(err, "validateAccessToken: unable to do HTTP request")
 	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return false, errors.Wrap(errUnauthorized, "validateAccessToken: unauthorized")
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return false, nil
 	}
+
 	return true, nil
 }
 
 func (client *DefaultClient) validateJWT(token string) (*JWTClaims, error) {
 	if token == "" {
-		return nil, errors.New("token is empty")
+		return nil, errors.WithMessage(errEmptyToken, "validateJWT: invalid token")
 	}
 
 	var jwtClaims = JWTClaims{}
 
 	webToken, err := jwt.ParseSigned(token)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "validateJWT: unable to parse JWT")
 	}
 
 	if webToken.Headers[0].KeyID == "" {
-		return nil, errors.New("invalid token signature key ID")
+		return nil, errors.WithMessage(errInvalidTokenSignatureKey, "validateJWT: invalid header")
 	}
 
 	publicKey, err := client.getPublicKey(webToken.Headers[0].KeyID)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "validateJWT: invalid key")
 	}
 
 	err = webToken.Claims(publicKey, &jwtClaims)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "validateJWT: unable to deserialize JWT claims")
 	}
 
 	err = jwtClaims.Validate()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "validateJWT: unable to validate JWT")
 	}
 
 	return &jwtClaims, nil
@@ -94,17 +124,31 @@ func (client *DefaultClient) userRevoked(userID string, issuedAt int64) bool {
 
 func (client *DefaultClient) refreshAccessToken() {
 	var tokenRefreshInterval time.Duration
-	backOffTime := time.Second
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+
 	for {
-		tokenRefreshInterval, client.tokenRefreshError = client.clientTokenGrant()
+
+		client.tokenRefreshError = backoff.
+			Retry(
+				func() error {
+					var e error
+
+					tokenRefreshInterval, e = client.clientTokenGrant()
+					if e != nil {
+						return e
+					}
+
+					return nil
+				},
+				b,
+			)
+
 		if client.tokenRefreshError != nil {
-			time.Sleep(backOffTime)
-			if backOffTime < maxBackOffTime {
-				backOffTime *= 2
-			}
 			continue
 		}
-		backOffTime = time.Second
+
+		log("refreshAccessToken: client token refreshed")
 		time.Sleep(tokenRefreshInterval)
 	}
 }
@@ -112,26 +156,59 @@ func (client *DefaultClient) refreshAccessToken() {
 func (client *DefaultClient) clientTokenGrant() (time.Duration, error) {
 	form := url.Values{}
 	form.Add("grant_type", "client_credentials")
-	req, err := http.NewRequest(http.MethodPost, client.config.BaseURL+grantPath, bytes.NewBufferString(form.Encode()))
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		client.config.BaseURL+grantPath,
+		bytes.NewBufferString(form.Encode()),
+	)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "clientTokenGrant: unable to create new HTTP request")
 	}
+
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth(client.config.ClientID, client.config.ClientSecret)
-	httpClient := http.Client{}
-	resp, err := httpClient.Do(req)
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+	resp := &http.Response{}
+
+	err = backoff.
+		Retry(
+			func() error {
+				var e error
+
+				resp, e = client.httpClient.Do(req)
+				if e != nil {
+					return backoff.Permanent(e)
+				}
+
+				if resp.StatusCode >= http.StatusInternalServerError {
+					return e
+				}
+
+				return nil
+			},
+			b,
+		)
+
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "clientTokenGrant: unable to do HTTP request")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, errors.Wrap(err, "clientTokenGrant: endpoint returned non-OK")
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "clientTokenGrant: unable to read response body")
 	}
+
 	var tokenResponse *TokenResponse
 	err = json.Unmarshal(bodyBytes, &tokenResponse)
 	if err != nil {
-		return 0, fmt.Errorf("unable to unmarshal response body: %v", err)
+		return 0, errors.Wrap(err, "clientTokenGrant: unable to unmarshal response body")
 	}
 
 	client.clientAccessToken = tokenResponse.AccessToken

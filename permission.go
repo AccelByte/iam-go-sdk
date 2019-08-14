@@ -18,16 +18,14 @@ package iam
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 
-	cache "github.com/patrickmn/go-cache"
+	"github.com/cenkalti/backoff"
+	"github.com/patrickmn/go-cache"
+	"github.com/pkg/errors"
 )
-
-var errRoleNotFound = errors.New("role not found")
 
 func (client *DefaultClient) permissionAllowed(grantedPermissions []Permission, requiredPermission Permission) bool {
 	for _, grantedPermission := range grantedPermissions {
@@ -99,40 +97,61 @@ func (client *DefaultClient) getRolePermission(roleID string) ([]Permission, err
 
 	req, err := http.NewRequest("GET", client.config.BaseURL+getRolePath+"/"+roleID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create new http request %v", err)
+		return nil, errors.Wrap(err, "getRolePermission: unable to create new HTTP request")
 	}
 
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken)
 
-	httpClient := http.Client{}
-	resp, err := httpClient.Do(req)
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+	resp := &http.Response{}
+
+	err = backoff.
+		Retry(
+			func() error {
+				var e error
+				resp, e = client.httpClient.Do(req)
+
+				if e != nil {
+					return backoff.Permanent(e)
+				}
+
+				if resp.StatusCode >= http.StatusInternalServerError {
+					return e
+				}
+
+				return nil
+			},
+			b,
+		)
+
 	if err != nil {
-		return nil, fmt.Errorf("unable to do http request %v", err)
+		return nil, errors.Wrap(err, "getRolePermission: unable to do HTTP request")
 	}
 
 	switch resp.StatusCode {
 	case http.StatusOK:
 		// do nothing
 	case http.StatusUnauthorized:
-		return nil, errors.New("access unauthorized, make sure you have valid client access token using ClientTokenGrant")
+		return nil, errors.Wrap(errUnauthorized, "getRolePermission: unauthorized")
 	case http.StatusForbidden:
-		return nil, errors.New("access forbidden, make sure you have client creds that has sufficient permission")
+		return nil, errors.Wrap(errForbidden, "getRolePermission: forbidden")
 	case http.StatusNotFound:
-		return nil, errRoleNotFound
+		return nil, errors.Wrap(errRoleNotFound, "getRolePermission: not found")
 	default:
 		return nil, errors.New("unexpected error: " + http.StatusText(resp.StatusCode))
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read response body: %v", err)
+		return nil, errors.Wrap(err, "getRolePermission: unable to read response body")
 	}
 
 	var role Role
 	err = json.Unmarshal(bodyBytes, &role)
 	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response body: %v", err)
+		return nil, errors.Wrap(err, "getRolePermission: unable to unmarshal response body")
 	}
 
 	client.rolePermissionCache.Set(roleID, role.Permissions, cache.DefaultExpiration)

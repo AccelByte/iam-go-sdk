@@ -22,11 +22,13 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net/http"
 	"time"
+
+	"github.com/cenkalti/backoff"
+	"github.com/pkg/errors"
 )
 
 var jwtEncoding = base64.URLEncoding.WithPadding(base64.NoPadding)
@@ -65,35 +67,58 @@ func (client *DefaultClient) refreshJWKS() {
 func (client *DefaultClient) getJWKS() error {
 	req, err := http.NewRequest("GET", client.config.BaseURL+jwksPath, nil)
 	if err != nil {
-		return fmt.Errorf("unable to create new JWKS request: %v", err)
+		return errors.Wrap(err, "getJWKS: unable to create new JWKS request")
 	}
 
 	req.SetBasicAuth(client.config.ClientID, client.config.ClientSecret)
-	httpClient := http.Client{}
-	resp, err := httpClient.Do(req)
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+	resp := &http.Response{}
+
+	err = backoff.
+		Retry(
+			func() error {
+				var e error
+				resp, e = client.httpClient.Do(req)
+
+				if e != nil {
+					return backoff.Permanent(e)
+				}
+
+				if resp.StatusCode >= http.StatusInternalServerError {
+					return e
+				}
+
+				return nil
+			},
+			b,
+		)
+
 	if err != nil {
-		return fmt.Errorf("unable to get JWKS: %v", err)
+		return errors.Wrap(err, "getJWKS: unable to do HTTP request to get JWKS")
 	}
+
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unable to get JWKS: endpoint returned non-OK %v", err)
+		return errors.Wrap(err, "getJWKS: endpoint returned non-OK")
 	}
 
 	respBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("unable to read response body: %v", err)
+		return errors.Wrap(err, "getJWKS: unable to read response body")
 	}
 
 	var jwks Keys
 	err = json.Unmarshal(respBody, &jwks)
 	if err != nil {
-		return fmt.Errorf("unable to unmarshal response body: %v", err)
+		return errors.Wrap(err, "getJWKS: unable to unmarshal response body")
 	}
 
 	client.keys = make(map[string]*rsa.PublicKey)
 	for _, jwk := range jwks.Keys {
 		key, errGenerate := generatePublicKey(&jwk)
 		if errGenerate != nil {
-			return fmt.Errorf("unable to get public key: %v", err)
+			return errors.WithMessage(err, "getJWKS: unable to generate public key")
 		}
 		client.keys[jwk.Kid] = key
 	}
@@ -104,7 +129,7 @@ func (client *DefaultClient) getJWKS() error {
 func (client *DefaultClient) getPublicKey(keyID string) (*rsa.PublicKey, error) {
 	key, ok := client.keys[keyID]
 	if !ok {
-		return nil, fmt.Errorf("public key doesn't exist")
+		return nil, errors.New("getPublicKey: public key doesn't exist")
 	}
 	return key, nil
 }
@@ -126,7 +151,7 @@ func generatePublicKey(jwk *JWK) (*rsa.PublicKey, error) {
 func getModulus(jwkN string) (*big.Int, error) {
 	decodedN, err := jwtEncoding.DecodeString(jwkN)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "getModulus: unable to decode JWK modulus string")
 	}
 	n := big.NewInt(0)
 	n.SetBytes(decodedN)
@@ -137,7 +162,7 @@ func getModulus(jwkN string) (*big.Int, error) {
 func getPublicExponent(jwkE string) (int, error) {
 	decodedE, err := jwtEncoding.DecodeString(jwkE)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "getPublicExponent: unable to decode JWK exponent string")
 	}
 
 	var eBytes []byte
@@ -152,7 +177,7 @@ func getPublicExponent(jwkE string) (int, error) {
 	var e uint64
 	err = binary.Read(eReader, binary.BigEndian, &e)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "getPublicExponent: unable to read JWK exponent bytes")
 	}
 
 	return int(e), nil

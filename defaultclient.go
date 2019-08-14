@@ -19,7 +19,6 @@ package iam
 import (
 	"crypto/rsa"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -27,7 +26,9 @@ import (
 	"time"
 
 	"github.com/AccelByte/bloom"
+	"github.com/cenkalti/backoff"
 	"github.com/patrickmn/go-cache"
+	"github.com/pkg/errors"
 )
 
 // JFlags constants
@@ -64,6 +65,7 @@ type Config struct {
 	RolesCacheExpirationTime      time.Duration // default: 60s
 	JWKSRefreshInterval           time.Duration // default: 60s
 	RevocationListRefreshInterval time.Duration // default: 60s
+	Debug                         bool
 }
 
 // DefaultClient define oauth client config
@@ -85,10 +87,13 @@ type DefaultClient struct {
 	httpClient HTTPClient
 }
 
-// HTTPClient is an interface for http.Client. The purpose for having this so we could easily mock the HTTP call.
+// HTTPClient is an interface for http.Client.
+// The purpose for having this so we could easily mock the HTTP call.
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
+
+var debug bool
 
 // NewDefaultClient creates new IAM DefaultClient
 func NewDefaultClient(config *Config) Client {
@@ -103,13 +108,21 @@ func NewDefaultClient(config *Config) Client {
 	}
 
 	client := &DefaultClient{
-		config:              config,
-		rolePermissionCache: cache.New(config.RolesCacheExpirationTime, 2*config.RolesCacheExpirationTime),
+		config: config,
+		rolePermissionCache: cache.New(
+			config.RolesCacheExpirationTime,
+			2*config.RolesCacheExpirationTime,
+		),
+		baseURICache: cache.New(
+			baseURICacheExpiration,
+			baseURICacheExpiration,
+		),
+		httpClient: &http.Client{},
 	}
 	client.remoteTokenValidation = client.validateAccessToken
 
-	client.baseURICache = cache.New(baseURICacheExpiration, baseURICacheExpiration)
-	client.httpClient = &http.Client{}
+	debug = config.Debug
+	log("NewDefaultClient: debug enabled")
 
 	return client
 }
@@ -118,13 +131,18 @@ func NewDefaultClient(config *Config) Client {
 func (client *DefaultClient) ClientTokenGrant() error {
 	refreshInterval, err := client.clientTokenGrant()
 	if err != nil {
-		return err
+		return logAndReturnErr(
+			errors.WithMessage(err,
+				"ClientTokenGrant: unable to do token grant"))
 	}
+
 	go func() {
 		client.tokenRefreshActive = true
 		time.Sleep(refreshInterval)
 		client.refreshAccessToken()
 	}()
+
+	log("ClientTokenGrant: token grant success")
 	return nil
 }
 
@@ -138,43 +156,96 @@ func (client *DefaultClient) ClientToken() string {
 func (client *DefaultClient) StartLocalValidation() error {
 	err := client.getJWKS()
 	if err != nil {
-		return fmt.Errorf("unable to get JWKS: %v", err)
+		return logAndReturnErr(
+			errors.WithMessage(err,
+				"StartLocalValidation: unable to get JWKS"))
 	}
 
 	err = client.getRevocationList()
 	if err != nil {
-		return fmt.Errorf("unable to get revocation list: %v", err)
+		return logAndReturnErr(
+			errors.WithMessage(err,
+				"StartLocalValidation: unable to get revocation list"))
 	}
 
 	go client.refreshJWKS()
 	go client.refreshRevocationList()
 
 	client.localValidationActive = true
+
+	log("StartLocalValidation: local validation activated")
 	return nil
 }
 
 // ValidateAccessToken validates access token by calling IAM service
 func (client *DefaultClient) ValidateAccessToken(accessToken string) (bool, error) {
-	return client.remoteTokenValidation(accessToken)
+	var isValid bool
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+
+	err := backoff.
+		Retry(
+			func() error {
+				var e error
+
+				isValid, e = client.remoteTokenValidation(accessToken)
+				if e != nil {
+					if errors.Cause(e) == errUnauthorized {
+						client.refreshAccessToken()
+						return e
+					}
+
+					return backoff.Permanent(e)
+				}
+
+				return nil
+			},
+			b,
+		)
+
+	err = logAndReturnErr(
+		errors.WithMessage(err,
+			"ValidateAccessToken: unable to validate token"))
+
+	if isValid {
+		log("ValidateAccessToken: token is valid")
+	}
+
+	return isValid, err
 }
 
 // ValidateAndParseClaims validates access token locally and returns the JWT claims contained in the token
 func (client *DefaultClient) ValidateAndParseClaims(accessToken string) (*JWTClaims, error) {
 	if !client.localValidationActive {
-		return nil, errors.New("local validation is not active, activate by calling StartLocalValidation()")
+		err := logAndReturnErr(
+			errors.Wrap(errNoLocalValidation,
+				"ValidateAndParseClaims: unable to validate claims"))
+		return nil, err
 	}
 
 	claims, err := client.validateJWT(accessToken)
 	if err != nil {
-		return nil, fmt.Errorf("unable to verify JWT : %v", err)
-	}
-	if client.userRevoked(claims.Subject, int64(claims.IssuedAt)) {
-		return nil, errors.New("user has been revoked")
-	}
-	if client.tokenRevoked(accessToken) {
-		return nil, errors.New("token has been revoked")
+		err = logAndReturnErr(
+			errors.WithMessage(err,
+				"ValidateAndParseClaims: unable to validate JWT"))
+		return nil, err
 	}
 
+	if client.userRevoked(claims.Subject, int64(claims.IssuedAt)) {
+		err = logAndReturnErr(
+			errors.Wrap(errUserRevoked,
+				"ValidateAndParseClaims: user (owner) of JWT is revoked"))
+		return nil, err
+	}
+
+	if client.tokenRevoked(accessToken) {
+		err = logAndReturnErr(
+			errors.Wrap(errTokenRevoked,
+				"ValidateAndParseClaims: token is revoked"))
+		return nil, err
+	}
+
+	log("ValidateAndParseClaims: JWT validated")
 	return claims, nil
 }
 
@@ -185,28 +256,65 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string) (*JWTCla
 // 		`requiredPermission`, example: p["{namespace}"] = "accelbyte"
 func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 	requiredPermission Permission, permissionResources map[string]string) (bool, error) {
+
 	if claims == nil {
+		log("ValidatePermission: claim is nil")
 		return false, nil
 	}
+
 	for placeholder, value := range permissionResources {
 		requiredPermission.Resource = strings.Replace(requiredPermission.Resource, placeholder, value, 1)
 	}
+
 	if client.permissionAllowed(claims.Permissions, requiredPermission) {
+		log("ValidatePermission: permission allowed to access resource")
 		return true, nil
 	}
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+
 	for _, roleID := range claims.Roles {
-		grantedRolePermissions, err := client.getRolePermission(roleID)
+		grantedRolePermissions := make([]Permission, 0)
+		err := backoff.
+			Retry(
+				func() error {
+					var e error
+
+					grantedRolePermissions, e = client.getRolePermission(roleID)
+					if e != nil {
+
+						switch errors.Cause(e) {
+						case errRoleNotFound:
+							return nil
+						case errUnauthorized:
+							client.refreshAccessToken()
+							return e
+						}
+
+						return backoff.Permanent(e)
+					}
+
+					return nil
+				},
+				b,
+			)
+
 		if err != nil {
-			if err == errRoleNotFound {
-				continue
-			}
+			err = logAndReturnErr(
+				errors.WithMessage(err,
+					"ValidatePermission: unable to get role perms"))
 			return false, err
 		}
+
 		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims)
 		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
+			log("ValidatePermission: permission allowed to access resource")
 			return true, nil
 		}
 	}
+
+	log("ValidatePermission: permission not allowed to access resource")
 	return false, nil
 }
 
@@ -214,27 +322,36 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 func (client *DefaultClient) ValidateRole(requiredRoleID string, claims *JWTClaims) (bool, error) {
 	for _, grantedRoleID := range claims.Roles {
 		if grantedRoleID == requiredRoleID {
+			log("ValidateRole: role allowed to access resource")
 			return true, nil
 		}
 	}
+
+	log("ValidateRole: role not allowed to access resource")
 	return false, nil
 }
 
 // UserPhoneVerificationStatus gets user phone verification status on access token
 func (client *DefaultClient) UserPhoneVerificationStatus(claims *JWTClaims) (bool, error) {
 	phoneVerified := claims.JusticeFlags&UserStatusPhoneVerified == UserStatusPhoneVerified
+
+	log("UserPhoneVerificationStatus: ", phoneVerified)
 	return phoneVerified, nil
 }
 
 // UserEmailVerificationStatus gets user email verification status on access token
 func (client *DefaultClient) UserEmailVerificationStatus(claims *JWTClaims) (bool, error) {
 	emailVerified := claims.JusticeFlags&UserStatusEmailVerified == UserStatusEmailVerified
+
+	log("UserEmailVerificationStatus: ", emailVerified)
 	return emailVerified, nil
 }
 
 // UserAnonymousStatus gets user anonymous status on access token
 func (client *DefaultClient) UserAnonymousStatus(claims *JWTClaims) (bool, error) {
 	anonymousStatus := claims.JusticeFlags&UserStatusAnonymous == UserStatusAnonymous
+
+	log("UserAnonymousStatus: ", anonymousStatus)
 	return anonymousStatus, nil
 }
 
@@ -242,45 +359,86 @@ func (client *DefaultClient) UserAnonymousStatus(claims *JWTClaims) (bool, error
 func (client *DefaultClient) HasBan(claims *JWTClaims, banType string) bool {
 	for _, ban := range claims.Bans {
 		if ban.Ban == banType {
+			log("HasBan: user banned")
 			return true
 		}
 	}
+
+	log("HasBan: user not banned")
 	return false
 }
 
 // HealthCheck lets caller know the health of the IAM client
 func (client *DefaultClient) HealthCheck() bool {
 	if client.jwksRefreshError != nil {
+		logErr(client.jwksRefreshError,
+			"HealthCheck: error in JWKs refresh")
 		return false
 	}
+
 	if client.revocationListRefreshError != nil {
+		logErr(client.revocationListRefreshError,
+			"HealthCheck: error in revocation list refresh")
 		return false
 	}
+
 	if client.tokenRefreshActive && client.tokenRefreshError != nil {
+		logErr(client.tokenRefreshError,
+			"HealthCheck: error in token refresh")
 		return false
 	}
+
+	log("HealthCheck: all OK")
 	return true
 }
 
 // ValidateAudience validate audience of user access token
 func (client *DefaultClient) ValidateAudience(claims *JWTClaims) error {
 	if claims == nil {
-		return errors.New("claims is nil")
+		return logAndReturnErr(
+			errors.Wrap(errNilClaim,
+				"ValidateAudience: invalid audience"))
 	}
+
 	// no need to check if no audience found in the claims. https://tools.ietf.org/html/rfc7519#section-4.1.3
 	if claims.Audience == nil {
-		fmt.Printf("[IAM-Go-SDK] No audience found in the token. Skipping the audience validation\n")
+		log("ValidateAudience: no audience found in the token. " +
+			"Skipping the audience validation")
 		return nil
 	}
+
 	baseURI, found := client.baseURICache.Get(baseURIKey)
 	if !found {
 		path := fmt.Sprintf(clientInformationPath, claims.Namespace, client.config.ClientID)
 		getClientInformationURL := client.config.BaseURL + path
-		err := client.getClientInformation(getClientInformationURL)
+
+		b := backoff.NewExponentialBackOff()
+		b.MaxElapsedTime = maxBackOffTime
+
+		err := backoff.
+			Retry(
+				func() error {
+					e := client.getClientInformation(getClientInformationURL)
+					if e != nil {
+						if errors.Cause(e) == errUnauthorized {
+							client.refreshAccessToken()
+							return e
+						}
+
+						return backoff.Permanent(e)
+					}
+
+					return nil
+				},
+				b,
+			)
+
 		if err != nil {
-			fmt.Printf("[IAM-Go-SDK] get client detail returns error: %v\n", err)
-			return err
+			return logAndReturnErr(
+				errors.WithMessage(err,
+					"ValidateAudience: get client detail returns error"))
 		}
+
 		baseURI, _ = client.baseURICache.Get(baseURIKey)
 	}
 
@@ -293,9 +451,12 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims) error {
 	}
 
 	if !isAllowed {
-		return errors.New("audience doesn't match the client's base uri. access denied")
+		return logAndReturnErr(
+			errors.Wrap(errInvalidAud,
+				"ValidateAudience: audience is not valid"))
 	}
 
+	log("ValidateAudience: audience is valid")
 	return nil
 }
 
@@ -312,9 +473,12 @@ func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string) e
 	}
 
 	if !isValid {
-		return errors.New("insufficient scope")
+		return logAndReturnErr(errors.Wrap(
+			errInvalidScope,
+			"ValidateScope: invalid scope"))
 	}
 
+	log("ValidateScope: scope valid")
 	return nil
 }
 
@@ -328,28 +492,56 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 
 	req, err := http.NewRequest(http.MethodGet, getClientInformationURL, nil)
 	if err != nil {
-		return fmt.Errorf("unable to create new http request: %v", err)
+		return errors.Wrap(err, "getClientInformation: unable to create new HTTP request")
 	}
+
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken)
-	resp, err := client.httpClient.Do(req)
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+	resp := &http.Response{}
+
+	err = backoff.
+		Retry(
+			func() error {
+				var e error
+				resp, e = client.httpClient.Do(req)
+
+				if e != nil {
+					return backoff.Permanent(e)
+				}
+
+				if resp.StatusCode >= http.StatusInternalServerError {
+					return e
+				}
+
+				return nil
+			},
+			b,
+		)
+
 	if err != nil {
-		return fmt.Errorf("unable to do http request: %v", err)
+		return errors.Wrap(err, "getClientInformation: unable to do HTTP request")
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("unable to read body response: %v", err)
+		return errors.Wrap(err, "getClientInformation: unable to read body response")
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return errors.Wrap(errUnauthorized, "getClientInformation: unauthorized")
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unable to get client information : error code : %d, error message : %s",
+		return errors.Errorf("getClientInformation: unable to get client information: error code : %d, error message : %s",
 			resp.StatusCode, string(bodyBytes))
 	}
 
 	err = json.Unmarshal(bodyBytes, &clientInformation)
 	if err != nil {
-		return fmt.Errorf("unable to unmarshal body: %v", err)
+		return errors.Wrap(err, "getClientInformation: unable to unmarshal response body")
 	}
 
 	client.baseURICache.Set(baseURIKey, clientInformation.BaseURI, cache.DefaultExpiration)

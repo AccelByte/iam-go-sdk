@@ -18,12 +18,13 @@ package iam
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
 
 	"github.com/AccelByte/bloom"
+	"github.com/cenkalti/backoff"
+	"github.com/pkg/errors"
 )
 
 func (client *DefaultClient) refreshRevocationList() {
@@ -46,23 +47,51 @@ func (client *DefaultClient) refreshRevocationList() {
 func (client *DefaultClient) getRevocationList() error {
 	req, err := http.NewRequest(http.MethodGet, client.config.BaseURL+revocationListPath, nil)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "getRevocationList: unable to make new HTTP request")
 	}
+
 	req.SetBasicAuth(client.config.ClientID, client.config.ClientSecret)
-	httpClient := http.Client{}
-	resp, err := httpClient.Do(req)
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+	resp := &http.Response{}
+
+	err = backoff.
+		Retry(
+			func() error {
+				var e error
+				resp, e = client.httpClient.Do(req)
+
+				if e != nil {
+					return backoff.Permanent(e)
+				}
+
+				if resp.StatusCode >= http.StatusInternalServerError {
+					return e
+				}
+
+				return nil
+			},
+			b,
+		)
+
 	if err != nil {
-		return err
+		return errors.Wrap(err, "getRevocationList: unable to do HTTP request")
 	}
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.Wrap(err, "getRevocationList: endpoint returned non-OK")
+	}
+
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "getRevocationList: unable to read HTTP response body")
 	}
 
 	var revocationList *RevocationList
 	err = json.Unmarshal(bodyBytes, &revocationList)
 	if err != nil {
-		return fmt.Errorf("unable to unmarshal response body: %v", err)
+		return errors.Wrap(err, "getRevocationList: unable to unmarshal response body")
 	}
 
 	client.revokedUsers = make(map[string]time.Time)
