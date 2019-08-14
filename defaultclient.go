@@ -371,19 +371,19 @@ func (client *DefaultClient) HasBan(claims *JWTClaims, banType string) bool {
 // HealthCheck lets caller know the health of the IAM client
 func (client *DefaultClient) HealthCheck() bool {
 	if client.jwksRefreshError != nil {
-		logErr(err,
+		logErr(client.jwksRefreshError,
 			"HealthCheck: error in JWKs refresh")
 		return false
 	}
 
 	if client.revocationListRefreshError != nil {
-		logErr(err,
+		logErr(client.revocationListRefreshError,
 			"HealthCheck: error in revocation list refresh")
 		return false
 	}
 
 	if client.tokenRefreshActive && client.tokenRefreshError != nil {
-		logErr(err,
+		logErr(client.tokenRefreshError,
 			"HealthCheck: error in token refresh")
 		return false
 	}
@@ -434,10 +434,9 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims) error {
 			)
 
 		if err != nil {
-			logAndReturnErr(errors.WithMessage(
-				err,
-				"ValidateAudience: get client detail returns error"))
-			return
+			return logAndReturnErr(
+				errors.WithMessage(err,
+					"ValidateAudience: get client detail returns error"))
 		}
 
 		baseURI, _ = client.baseURICache.Get(baseURIKey)
@@ -452,9 +451,9 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims) error {
 	}
 
 	if !isAllowed {
-		return logAndReturnErr(errors.Wrap(
-			errInvalidAud,
-			"ValidateAudience: audience is not valid"))
+		return logAndReturnErr(
+			errors.Wrap(errInvalidAud,
+				"ValidateAudience: audience is not valid"))
 	}
 
 	log("ValidateAudience: audience is valid")

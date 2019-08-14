@@ -6,6 +6,7 @@ package iam
 
 import "errors"
 
+// nolint: lll
 var (
 	errUnauthorized             = errors.New("access unauthorized, make sure you have valid client access token using ClientTokenGrant")
 	errForbidden                = errors.New("access forbidden, make sure you have client creds that has sufficient permission")

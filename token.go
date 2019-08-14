@@ -157,7 +157,11 @@ func (client *DefaultClient) clientTokenGrant() (time.Duration, error) {
 	form := url.Values{}
 	form.Add("grant_type", "client_credentials")
 
-	req, err := http.NewRequest(http.MethodPost, client.config.BaseURL+grantPath, bytes.NewBufferString(form.Encode()))
+	req, err := http.NewRequest(
+		http.MethodPost,
+		client.config.BaseURL+grantPath,
+		bytes.NewBufferString(form.Encode()),
+	)
 	if err != nil {
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to create new HTTP request")
 	}

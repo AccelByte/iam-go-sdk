@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"testing"
 	"time"
@@ -81,13 +82,14 @@ type tokenUserData struct {
 	JusticeFlags   int `json:"jflgs"`
 }
 
-var testClient Client
+var testClient *DefaultClient
 var privateKey *rsa.PrivateKey
 var signer jose.Signer
 
 func init() {
 	privateKey = mustUnmarshalRSA(testJWTPrivateKey)
 	testClient = &DefaultClient{
+		config:                &Config{},
 		keys:                  make(map[string]*rsa.PublicKey),
 		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		revocationFilter:      bloom.New(100),
@@ -108,14 +110,22 @@ func init() {
 		panic(err)
 	}
 
-	testClient.(*DefaultClient).keys[keyID] = &rsa.PublicKey{
+	testClient.keys[keyID] = &rsa.PublicKey{
 		E: privateKey.PublicKey.E,
 		N: privateKey.PublicKey.N,
 	}
-	testClient.(*DefaultClient).rolePermissionCache.Set(defaultUserRole, []Permission{
-		{Resource: "NAMESPACE:{namespace}:USER:{userId}:ORDER", Action: ActionCreate | ActionRead | ActionUpdate},
-	}, cache.DefaultExpiration)
-	testClient.(*DefaultClient).remoteTokenValidation =
+
+	testClient.rolePermissionCache.Set(
+		defaultUserRole,
+		[]Permission{
+			{
+				Resource: "NAMESPACE:{namespace}:USER:{userId}:ORDER",
+				Action:   ActionCreate | ActionRead | ActionUpdate,
+			},
+		},
+		cache.DefaultExpiration)
+
+	testClient.remoteTokenValidation =
 		func(accessToken string) (bool, error) {
 			if accessToken == invalid {
 				return false, nil
@@ -142,6 +152,85 @@ func mustUnmarshalRSA(data string) *rsa.PrivateKey {
 		return key
 	}
 	panic("key is not of type *rsa.PrivateKey")
+}
+
+func Test_NewDefaultClient(t *testing.T) {
+	conf := &Config{}
+	c := NewDefaultClient(conf)
+
+	defaultClient := c.(*DefaultClient)
+
+	assert.Equal(t, defaultRoleCacheTime, defaultClient.config.RolesCacheExpirationTime)
+	assert.Equal(t, defaultJWKSRefreshInterval, defaultClient.config.JWKSRefreshInterval)
+	assert.Equal(t, defaultRevocationListRefreshInterval, defaultClient.config.RevocationListRefreshInterval)
+}
+
+func Test_GetClientToken(t *testing.T) {
+	mockAccessToken := "mockAccessToken"
+
+	mockHTTPClient := &httpClientMock{
+		doMock: func(req *http.Request) (*http.Response, error) {
+
+			tokenResp := TokenResponse{
+				AccessToken: mockAccessToken,
+			}
+
+			b, _ := json.Marshal(tokenResp)
+
+			r := ioutil.NopCloser(bytes.NewReader(b))
+
+			return &http.Response{
+				Status:     http.StatusText(http.StatusOK),
+				StatusCode: http.StatusOK,
+				Body:       r,
+				Header:     http.Header{},
+			}, nil
+		},
+	}
+
+	conf := &Config{}
+	c := NewDefaultClient(conf)
+	defaultClient := c.(*DefaultClient)
+	defaultClient.httpClient = mockHTTPClient
+
+	err := defaultClient.ClientTokenGrant()
+	token := defaultClient.ClientToken()
+
+	assert.NoError(t, err, "client token grant should be successful")
+	assert.Equal(t, mockAccessToken, token, "access token should be equal")
+}
+
+func Test_StartLocalValidation(t *testing.T) {
+	mockHTTPClient := &httpClientMock{
+		doMock: func(req *http.Request) (*http.Response, error) {
+
+			resp := struct {
+				Keys
+				RevocationList
+			}{}
+
+			b, _ := json.Marshal(resp)
+
+			r := ioutil.NopCloser(bytes.NewReader(b))
+
+			return &http.Response{
+				Status:     http.StatusText(http.StatusOK),
+				StatusCode: http.StatusOK,
+				Body:       r,
+				Header:     http.Header{},
+			}, nil
+		},
+	}
+
+	conf := &Config{}
+	c := NewDefaultClient(conf)
+	defaultClient := c.(*DefaultClient)
+	defaultClient.httpClient = mockHTTPClient
+
+	err := defaultClient.StartLocalValidation()
+
+	assert.NoError(t, err, "start local validation should be successful")
+	assert.True(t, defaultClient.localValidationActive, "local validation should be active")
 }
 
 func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
@@ -484,7 +573,7 @@ func Test_DefaultClientValidateAndParseClaims_RevokedUser(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	testClient.(*DefaultClient).revokedUsers["e71d22e2b270449c90d4c15b89c3f994"] = time.Now().UTC()
+	testClient.revokedUsers["e71d22e2b270449c90d4c15b89c3f994"] = time.Now().UTC()
 
 	claims, err = testClient.ValidateAndParseClaims(accessToken)
 
@@ -506,7 +595,7 @@ func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	testClient.(*DefaultClient).revocationFilter.Put(bytes.NewBufferString(accessToken).Bytes())
+	testClient.revocationFilter.Put(bytes.NewBufferString(accessToken).Bytes())
 
 	claims, err = testClient.ValidateAndParseClaims(accessToken)
 
@@ -720,6 +809,16 @@ func Test_ValidateAudience_ClaimsIsNil(t *testing.T) {
 	err := mockClient.ValidateAudience(nil)
 
 	assert.NotNil(t, err)
+}
+
+func Test_ValidateScope(t *testing.T) {
+	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
+	claims := generateClaims(t, userData)
+	claims.Scope = "mockscope otherscope"
+
+	err := testClient.ValidateScope(claims, "mockscope")
+
+	assert.NoError(t, err, "validate scope should be successful")
 }
 
 func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {

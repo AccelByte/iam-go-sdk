@@ -27,10 +27,9 @@ func logErr(err error, s ...interface{}) {
 	fmt.Print("[IAM-Go-SDK] ")
 	fmt.Println(s...)
 	fmt.Printf("%+v\n", err)
-
-	return
 }
 
+// nolint: unparam
 func logAndReturnErr(err error, s ...interface{}) error {
 	logErr(err, s...)
 	return err
