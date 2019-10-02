@@ -622,16 +622,16 @@ func Test_ValidateAudience(t *testing.T) {
 		doMock: func(req *http.Request) (*http.Response, error) {
 			r := ioutil.NopCloser(strings.NewReader(`
 {
-   "ClientID": "5a2cf6407d6349c7a75264c2c1d04a10",
-   "ClientName": "test client",
-   "Namespace": "accelbyte",
-   "RedirectUri": "http://127.0.0.1",
-   "OauthClientType": "Confidential",
-   "Audiences": null,
-   "BaseUri": "http://example.net",
-   "CreatedAt": "2019-07-27T07:39:31.541500915Z",
-   "ModifiedAt": "0001-01-01T00:00:00Z",
-   "Scopes": null
+   "clientID": "5a2cf6407d6349c7a75264c2c1d04a10",
+   "clientName": "test client",
+   "namespace": "accelbyte",
+   "redirectUri": "http://127.0.0.1",
+   "oauthClientType": "Confidential",
+   "audiences": null,
+   "baseUri": "http://example.net",
+   "createdAt": "2019-07-27T07:39:31.541500915Z",
+   "modifiedAt": "0001-01-01T00:00:00Z",
+   "scopes": null
 }
 `))
 			return &http.Response{
@@ -669,16 +669,16 @@ func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
 		doMock: func(req *http.Request) (*http.Response, error) {
 			r := ioutil.NopCloser(strings.NewReader(`
 {
-   "ClientID": "5a2cf6407d6349c7a75264c2c1d04a10",
-   "ClientName": "test client",
-   "Namespace": "accelbyte",
-   "RedirectUri": "http://127.0.0.1",
-   "OauthClientType": "Confidential",
-   "Audiences": null,
-   "BaseUri": "http://example.net",
-   "CreatedAt": "2019-07-27T07:39:31.541500915Z",
-   "ModifiedAt": "0001-01-01T00:00:00Z",
-   "Scopes": null
+   "clientID": "5a2cf6407d6349c7a75264c2c1d04a10",
+   "clientName": "test client",
+   "namespace": "accelbyte",
+   "redirectUri": "http://127.0.0.1",
+   "oauthClientType": "Confidential",
+   "audiences": null,
+   "baseUri": "http://example.net",
+   "createdAt": "2019-07-27T07:39:31.541500915Z",
+   "modifiedAt": "0001-01-01T00:00:00Z",
+   "scopes": null
 }
 `))
 			return &http.Response{
@@ -717,8 +717,8 @@ func Test_ValidateAudience_ClientNotFound(t *testing.T) {
 		doMock: func(req *http.Request) (*http.Response, error) {
 			r := ioutil.NopCloser(strings.NewReader(`
 {
-	"ErrorCode": "106422",
-	"ErrorMessage:"client with id a952b5c054de468bab9e0b4802057f11 in namespace accelbyte was not found"
+	"errorCode": "106422",
+	"errorMessage:"client with id a952b5c054de468bab9e0b4802057f11 in namespace accelbyte was not found"
 }
 `))
 			return &http.Response{
@@ -755,16 +755,16 @@ func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
 		doMock: func(req *http.Request) (*http.Response, error) {
 			r := ioutil.NopCloser(strings.NewReader(`
 {
-   "ClientID": "5a2cf6407d6349c7a75264c2c1d04a10",
-   "ClientName": "test client",
-   "Namespace": "accelbyte",
-   "RedirectUri": "http://127.0.0.1",
-   "OauthClientType": "Confidential",
-   "Audiences": null,
-   "BaseUri": "http://example.net",
-   "CreatedAt": "2019-07-27T07:39:31.541500915Z",
-   "ModifiedAt": "0001-01-01T00:00:00Z",
-   "Scopes": null
+   "clientID": "5a2cf6407d6349c7a75264c2c1d04a10",
+   "clientName": "test client",
+   "namespace": "accelbyte",
+   "redirectUri": "http://127.0.0.1",
+   "oauthClientType": "Confidential",
+   "audiences": null,
+   "baseUri": "http://example.net",
+   "createdAt": "2019-07-27T07:39:31.541500915Z",
+   "modifiedAt": "0001-01-01T00:00:00Z",
+   "scopes": null
 }
 `))
 			return &http.Response{

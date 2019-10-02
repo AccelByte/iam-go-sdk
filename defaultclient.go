@@ -487,7 +487,7 @@ func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string) e
 func (client *DefaultClient) getClientInformation(getClientInformationURL string) (err error) {
 
 	clientInformation := struct {
-		BaseURI string `json:"BaseUri"`
+		BaseURI string `json:"baseUri"`
 	}{}
 
 	req, err := http.NewRequest(http.MethodGet, getClientInformationURL, nil)
