@@ -160,6 +160,6 @@ type UserRevocationListRecord struct {
 
 // JWTBan holds information about ban record in JWT
 type JWTBan struct {
-	Ban     string    `json:"ban"`
-	EndDate time.Time `json:"end_date"`
+	Ban     string    `json:"Ban"`
+	EndDate time.Time `json:"EndDate"`
 }
