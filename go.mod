@@ -14,4 +14,4 @@ require (
 	github.com/stretchr/testify v1.4.0
 )
 
-replace github.com/AccelByte/go-restful-plugins/v3 v3.1.2 => ../go-restful-plugins
+replace github.com/AccelByte/go-restful-plugins/v3 v3.1.2 => ./tmp/go-restful-plugins
