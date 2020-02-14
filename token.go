@@ -19,22 +19,29 @@ package iam
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/AccelByte/go-jose/jwt"
+	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
 	"github.com/cenkalti/backoff"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 )
 
-func (client *DefaultClient) validateAccessToken(accessToken string) (bool, error) {
+func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan opentracing.Span) (bool, error) {
+	span := jaeger.StartChildSpan(rootSpan, "client.validateAccessToken")
+	defer jaeger.Finish(span)
+
 	form := url.Values{}
 	form.Add("token", accessToken)
 
 	req, err := http.NewRequest(http.MethodPost, client.config.BaseURL+verifyPath, bytes.NewBufferString(form.Encode()))
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "validateAccessToken: unable to create new HTTP request"))
 		return false, errors.Wrap(err, "validateAccessToken: unable to create new HTTP request")
 	}
 
@@ -50,12 +57,18 @@ func (client *DefaultClient) validateAccessToken(accessToken string) (bool, erro
 			func() error {
 				var e error
 
+				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer jaeger.Finish(reqSpan)
+				jaeger.InjectSpanIntoRequest(reqSpan, req)
+
 				resp, e = client.httpClient.Do(req)
 				if e != nil {
+					jaeger.TraceError(reqSpan, e)
 					return backoff.Permanent(e)
 				}
 
 				if resp.StatusCode >= http.StatusInternalServerError {
+					jaeger.TraceError(reqSpan, e)
 					return e
 				}
 
@@ -65,10 +78,12 @@ func (client *DefaultClient) validateAccessToken(accessToken string) (bool, erro
 		)
 
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "validateAccessToken: unable to do HTTP request"))
 		return false, errors.Wrap(err, "validateAccessToken: unable to do HTTP request")
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
+		jaeger.TraceError(span, errors.Wrap(errUnauthorized, "validateAccessToken: unauthorized"))
 		return false, errors.Wrap(errUnauthorized, "validateAccessToken: unauthorized")
 	}
 
@@ -79,7 +94,10 @@ func (client *DefaultClient) validateAccessToken(accessToken string) (bool, erro
 	return true, nil
 }
 
-func (client *DefaultClient) validateJWT(token string) (*JWTClaims, error) {
+func (client *DefaultClient) validateJWT(token string, rootSpan opentracing.Span) (*JWTClaims, error) {
+	span := jaeger.StartChildSpan(rootSpan, "client.validateJWT")
+	defer jaeger.Finish(span)
+
 	if token == "" {
 		return nil, errors.WithMessage(errEmptyToken, "validateJWT: invalid token")
 	}
@@ -122,7 +140,10 @@ func (client *DefaultClient) userRevoked(userID string, issuedAt int64) bool {
 	return revokedAt.Unix() >= issuedAt
 }
 
-func (client *DefaultClient) refreshAccessToken() {
+func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) {
+	span := jaeger.StartChildSpan(rootSpan, "client.refreshAccessToken")
+	defer jaeger.Finish(span)
+
 	var tokenRefreshInterval time.Duration
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
@@ -134,8 +155,12 @@ func (client *DefaultClient) refreshAccessToken() {
 				func() error {
 					var e error
 
-					tokenRefreshInterval, e = client.clientTokenGrant()
+					reqSpan := jaeger.StartChildSpan(span, "client.refreshAccessToken.Retry")
+					defer jaeger.Finish(reqSpan)
+
+					tokenRefreshInterval, e = client.clientTokenGrant(reqSpan)
 					if e != nil {
+						jaeger.TraceError(reqSpan, e)
 						return e
 					}
 
@@ -148,12 +173,16 @@ func (client *DefaultClient) refreshAccessToken() {
 			continue
 		}
 
+		jaeger.AddLog(span, "msg", "refreshAccessToken: client token refreshed")
 		log("refreshAccessToken: client token refreshed")
 		time.Sleep(tokenRefreshInterval)
 	}
 }
 
-func (client *DefaultClient) clientTokenGrant() (time.Duration, error) {
+func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.Duration, error) {
+	span := jaeger.StartChildSpan(rootSpan, "client.clientTokenGrant")
+	defer jaeger.Finish(span)
+
 	form := url.Values{}
 	form.Add("grant_type", "client_credentials")
 
@@ -163,6 +192,7 @@ func (client *DefaultClient) clientTokenGrant() (time.Duration, error) {
 		bytes.NewBufferString(form.Encode()),
 	)
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to create new HTTP request"))
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to create new HTTP request")
 	}
 
@@ -178,36 +208,46 @@ func (client *DefaultClient) clientTokenGrant() (time.Duration, error) {
 			func() error {
 				var e error
 
+				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer jaeger.Finish(reqSpan)
+				jaeger.InjectSpanIntoRequest(reqSpan, req)
+
 				resp, e = client.httpClient.Do(req)
 				if e != nil {
 					return backoff.Permanent(e)
 				}
 
 				if resp.StatusCode >= http.StatusInternalServerError {
+					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return e
 				}
 
+				jaeger.AddLog(reqSpan, "results", "-")
 				return nil
 			},
 			b,
 		)
 
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to do HTTP request"))
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to do HTTP request")
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: endpoint returned non-OK"))
 		return 0, errors.Wrap(err, "clientTokenGrant: endpoint returned non-OK")
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to read response body"))
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to read response body")
 	}
 
 	var tokenResponse *TokenResponse
 	err = json.Unmarshal(bodyBytes, &tokenResponse)
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to unmarshal response body"))
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to unmarshal response body")
 	}
 

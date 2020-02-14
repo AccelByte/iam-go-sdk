@@ -18,21 +18,22 @@ package iam
 
 import (
 	"bytes"
+	"context"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"io/ioutil"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
-
-	"net/http"
-
-	"io/ioutil"
-	"strings"
 
 	"github.com/AccelByte/bloom"
 	jose "github.com/AccelByte/go-jose"
 	"github.com/AccelByte/go-jose/jwt"
+	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
+	"github.com/opentracing/opentracing-go"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -69,6 +70,7 @@ Zpzt520CgYAHO3H5PpOCmj3I0Udz44gJrgb17myugTXoTzZysUwu+WDOvLMTxW1o
 QhLJPw+k1O94WC5Ysmk/rRxL4ZQujNPoz5YI4ELOquzi6Q7cxaieTidz1HuXMf35
 RDShmvcHF7W6ost87Z9tLYxaAQJVcMQVXlH/9VJ2QsFBZYZJjkjE9g==
 -----END RSA PRIVATE KEY-----`
+	jaegerAgentHost = "localhost:6831"
 )
 
 type tokenUserData struct {
@@ -87,6 +89,8 @@ var privateKey *rsa.PrivateKey
 var signer jose.Signer
 
 func init() {
+	jaeger.InitGlobalTracer(jaegerAgentHost, "", "test", "")
+
 	privateKey = mustUnmarshalRSA(testJWTPrivateKey)
 	testClient = &DefaultClient{
 		config:                &Config{},
@@ -126,7 +130,7 @@ func init() {
 		cache.DefaultExpiration)
 
 	testClient.remoteTokenValidation =
-		func(accessToken string) (bool, error) {
+		func(accessToken string, rootSpan opentracing.Span) (bool, error) {
 			if accessToken == invalid {
 				return false, nil
 			}
@@ -198,6 +202,13 @@ func Test_GetClientToken(t *testing.T) {
 
 	assert.NoError(t, err, "client token grant should be successful")
 	assert.Equal(t, mockAccessToken, token, "access token should be equal")
+
+	// test tracing
+	err = defaultClient.ClientTokenGrant(WithJaegerContext(context.Background()))
+	token = defaultClient.ClientToken(WithJaegerContext(context.Background()))
+
+	assert.NoError(t, err, "client token grant should be successful")
+	assert.Equal(t, mockAccessToken, token, "access token should be equal")
 }
 
 func Test_StartLocalValidation(t *testing.T) {
@@ -231,6 +242,11 @@ func Test_StartLocalValidation(t *testing.T) {
 
 	assert.NoError(t, err, "start local validation should be successful")
 	assert.True(t, defaultClient.localValidationActive, "local validation should be active")
+
+	// test tracing
+	err = defaultClient.StartLocalValidation(WithJaegerContext(context.Background()))
+	assert.NoError(t, err, "start local validation should be successful")
+	assert.True(t, defaultClient.localValidationActive, "local validation should be active")
 }
 
 func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
@@ -255,7 +271,10 @@ func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
 		claims := generateClaims(t, userData)
 
 		validationResult, _ := testClient.UserEmailVerificationStatus(claims)
+		assert.Equal(t, testCase.expectedValidationResult, validationResult, "email verification validation does not match")
 
+		// test tracing
+		validationResult, _ = testClient.UserEmailVerificationStatus(claims, WithJaegerContext(context.Background()))
 		assert.Equal(t, testCase.expectedValidationResult, validationResult, "email verification validation does not match")
 	}
 }
@@ -283,6 +302,10 @@ func Test_DefaultClientUserPhoneVerificationStatus(t *testing.T) {
 
 		validationResult, _ := testClient.UserPhoneVerificationStatus(claims)
 
+		assert.Equal(t, testCase.expectedValidationResult, validationResult, "phone verification validation does not match")
+
+		// test tracing
+		validationResult, _ = testClient.UserPhoneVerificationStatus(claims, WithJaegerContext(context.Background()))
 		assert.Equal(t, testCase.expectedValidationResult, validationResult, "phone verification validation does not match")
 	}
 }
@@ -312,6 +335,11 @@ func Test_DefaultClientUserAnonymousStatus(t *testing.T) {
 
 		assert.Equal(t, testCase.expectedValidationResult, validationResult,
 			"anonymous verification validation does not match")
+
+		// test tracing
+		validationResult, _ = testClient.UserAnonymousStatus(claims, WithJaegerContext(context.Background()))
+		assert.Equal(t, testCase.expectedValidationResult, validationResult,
+			"anonymous verification validation does not match")
 	}
 }
 
@@ -333,6 +361,11 @@ func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
 
 	assert.Nil(t, errValidateAndParseClaims, "access token is invalid")
 	assert.NotNil(t, claims, "claims should not nil")
+
+	// test tracing
+	claims, errValidateAndParseClaims = testClient.ValidateAndParseClaims(accessToken, WithJaegerContext(context.Background()))
+	assert.Nil(t, errValidateAndParseClaims, "access token is invalid")
+	assert.NotNil(t, claims, "claims should not nil")
 }
 
 func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
@@ -352,6 +385,11 @@ func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
 
 	claims, errValidateAndParseClaims := testClient.ValidateAndParseClaims(accessToken)
 
+	assert.Error(t, errValidateAndParseClaims, "access token should be invalid")
+	assert.Nil(t, claims, "claims should be nil")
+
+	// test tracing
+	claims, errValidateAndParseClaims = testClient.ValidateAndParseClaims(accessToken, WithJaegerContext(context.Background()))
 	assert.Error(t, errValidateAndParseClaims, "access token should be invalid")
 	assert.Nil(t, claims, "claims should be nil")
 }
@@ -420,6 +458,10 @@ func Test_DefaultClientValidatePermission(t *testing.T) {
 		validationResult, _ := testClient.ValidatePermission(claims, requiredPermission, permissionResources)
 
 		assert.Equal(t, testCase.expectedResult, validationResult, "resource string validation does not match")
+
+		// test tracing
+		validationResult, _ = testClient.ValidatePermission(claims, requiredPermission, permissionResources, WithJaegerContext(context.Background()))
+		assert.Equal(t, testCase.expectedResult, validationResult, "resource string validation does not match")
 	}
 }
 
@@ -449,6 +491,11 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole(t *testing.T) {
 		permissionResources["{namespace}"] = userData.Namespace
 		validationResult, _ := testClient.ValidatePermission(claims, requiredPermission, permissionResources)
 
+		assert.Equal(t, testCase.expectedResult, validationResult,
+			"resource string %s validation on roles does not match", requiredPermission.Resource)
+
+		// test tracing
+		validationResult, _ = testClient.ValidatePermission(claims, requiredPermission, permissionResources, WithJaegerContext(context.Background()))
 		assert.Equal(t, testCase.expectedResult, validationResult,
 			"resource string %s validation on roles does not match", requiredPermission.Resource)
 	}
@@ -518,6 +565,10 @@ func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
 		validationResult, _ := testClient.ValidatePermission(claims, requiredPermission, permissionResources)
 
 		assert.Equal(t, testCase.expectedResult, validationResult, "action bitmask validation does not match")
+
+		// test tracing
+		validationResult, _ = testClient.ValidatePermission(claims, requiredPermission, permissionResources, WithJaegerContext(context.Background()))
+		assert.Equal(t, testCase.expectedResult, validationResult, "action bitmask validation does not match")
 	}
 }
 
@@ -528,6 +579,10 @@ func Test_DefaultClientValidateRoleID(t *testing.T) {
 	validationResult, _ := testClient.ValidateRole(defaultUserRole, claims)
 
 	assert.True(t, validationResult, "resource roles id validation does not match")
+
+	// test tracing
+	validationResult, _ = testClient.ValidateRole(defaultUserRole, claims, WithJaegerContext(context.Background()))
+	assert.True(t, validationResult, "resource roles id validation does not match")
 }
 
 func Test_DefaultClientValidateRoleID_NotExist(t *testing.T) {
@@ -536,6 +591,10 @@ func Test_DefaultClientValidateRoleID_NotExist(t *testing.T) {
 
 	validationResult, _ := testClient.ValidateRole("non-exist-required-role-id", claims)
 
+	assert.False(t, validationResult, "resource roles id validation does not match")
+
+	// test tracing
+	validationResult, _ = testClient.ValidateRole("non-exist-required-role-id", claims, WithJaegerContext(context.Background()))
 	assert.False(t, validationResult, "resource roles id validation does not match")
 }
 
@@ -551,10 +610,21 @@ func Test_DefaultClientValidateAccessToken(t *testing.T) {
 	validationResult, _ := testClient.ValidateAccessToken(accessToken)
 
 	assert.True(t, validationResult, "valid direct verification should be granted")
+
+	// test tracing
+	validationResult, _ = testClient.ValidateAccessToken(accessToken, WithJaegerContext(context.Background()))
+	assert.True(t, validationResult, "valid direct verification should be granted")
 }
 
 func Test_DefaultClientValidateAccessToken_InvalidToken(t *testing.T) {
 	validationResult, err := testClient.ValidateAccessToken(invalid)
+	if err != nil {
+		t.Fatalf("unable to validate : %v", err)
+	}
+	assert.False(t, validationResult, "invalid direct verification should not be granted")
+
+	// test tracing
+	validationResult, err = testClient.ValidateAccessToken(invalid, WithJaegerContext(context.Background()))
 	if err != nil {
 		t.Fatalf("unable to validate : %v", err)
 	}
@@ -581,6 +651,11 @@ func Test_DefaultClientValidateAndParseClaims_RevokedUser(t *testing.T) {
 	assert.Nil(t, claims, "claims should be nil")
 	assert.Equal(t, errUserRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
 
+	// test tracing
+	claims, err = testClient.ValidateAndParseClaims(accessToken, WithJaegerContext(context.Background()))
+	assert.NotNil(t, err, "revoked user validation should not be granted on permission validation")
+	assert.Nil(t, claims, "claims should be nil")
+	assert.Equal(t, errUserRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
 }
 
 func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
@@ -602,6 +677,12 @@ func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
 	assert.NotNil(t, err, "revoked token validation should not be granted on role validation")
 	assert.Nil(t, claims, "claims should be nil")
 	assert.Equal(t, errTokenRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
+
+	// test jaeger
+	claims, err = testClient.ValidateAndParseClaims(accessToken, WithJaegerContext(context.Background()))
+	assert.NotNil(t, err, "revoked token validation should not be granted on role validation")
+	assert.Nil(t, claims, "claims should be nil")
+	assert.Equal(t, errTokenRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
 }
 
 func Test_DefaultClientHasBan(t *testing.T) {
@@ -610,6 +691,13 @@ func Test_DefaultClientHasBan(t *testing.T) {
 	claims.Bans = append(claims.Bans, JWTBan{Ban: "TEST_BAN"})
 
 	assert.True(t, testClient.HasBan(claims, "TEST_BAN"), "ban not found")
+
+	// test tracing
+	assert.True(t, testClient.HasBan(
+		claims,
+		"TEST_BAN",
+		WithJaegerContext(context.Background()),
+	), "ban not found")
 }
 
 // nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
@@ -819,6 +907,10 @@ func Test_ValidateScope(t *testing.T) {
 	err := testClient.ValidateScope(claims, "mockscope")
 
 	assert.NoError(t, err, "validate scope should be successful")
+
+	// test tracing
+	err = testClient.ValidateScope(claims, "mockscope", WithJaegerContext(context.Background()))
+	assert.NoError(t, err, "validate scope should be successful")
 }
 
 func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
@@ -845,4 +937,8 @@ type httpClientMock struct {
 
 func (c *httpClientMock) Do(req *http.Request) (*http.Response, error) {
 	return c.doMock(req)
+}
+
+func Test_Sleep(t *testing.T) {
+	time.Sleep(time.Second * 5)
 }

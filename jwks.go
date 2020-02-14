@@ -22,12 +22,15 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net/http"
 	"time"
 
+	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
 	"github.com/cenkalti/backoff"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 )
 
@@ -47,11 +50,14 @@ type Keys struct {
 	Keys []JWK `json:"keys"`
 }
 
-func (client *DefaultClient) refreshJWKS() {
+func (client *DefaultClient) refreshJWKS(rootSpan opentracing.Span) {
+	span := jaeger.StartChildSpan(rootSpan, "client.refreshJWKS")
+	defer jaeger.Finish(span)
+
 	backOffTime := time.Second
 	time.Sleep(client.config.JWKSRefreshInterval)
 	for {
-		client.jwksRefreshError = client.getJWKS()
+		client.jwksRefreshError = client.getJWKS(span)
 		if client.jwksRefreshError != nil {
 			time.Sleep(backOffTime)
 			if backOffTime < maxBackOffTime {
@@ -64,9 +70,13 @@ func (client *DefaultClient) refreshJWKS() {
 	}
 }
 
-func (client *DefaultClient) getJWKS() error {
+func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
+	span := jaeger.StartChildSpan(rootSpan, "client.getJWKS")
+	defer jaeger.Finish(span)
+
 	req, err := http.NewRequest("GET", client.config.BaseURL+jwksPath, nil)
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "getJWKS: unable to create new JWKS request"))
 		return errors.Wrap(err, "getJWKS: unable to create new JWKS request")
 	}
 
@@ -80,6 +90,11 @@ func (client *DefaultClient) getJWKS() error {
 		Retry(
 			func() error {
 				var e error
+
+				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer jaeger.Finish(reqSpan)
+				jaeger.InjectSpanIntoRequest(reqSpan, req)
+
 				resp, e = client.httpClient.Do(req)
 
 				if e != nil {
@@ -87,6 +102,7 @@ func (client *DefaultClient) getJWKS() error {
 				}
 
 				if resp.StatusCode >= http.StatusInternalServerError {
+					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return e
 				}
 
@@ -96,21 +112,25 @@ func (client *DefaultClient) getJWKS() error {
 		)
 
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "getJWKS: unable to do HTTP request to get JWKS"))
 		return errors.Wrap(err, "getJWKS: unable to do HTTP request to get JWKS")
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		jaeger.TraceError(span, errors.Wrap(err, "getJWKS: endpoint returned non-OK"))
 		return errors.Wrap(err, "getJWKS: endpoint returned non-OK")
 	}
 
 	respBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "getJWKS: unable to read response body"))
 		return errors.Wrap(err, "getJWKS: unable to read response body")
 	}
 
 	var jwks Keys
 	err = json.Unmarshal(respBody, &jwks)
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "getJWKS: unable to unmarshal response body"))
 		return errors.Wrap(err, "getJWKS: unable to unmarshal response body")
 	}
 
@@ -118,6 +138,7 @@ func (client *DefaultClient) getJWKS() error {
 	for _, jwk := range jwks.Keys {
 		key, errGenerate := generatePublicKey(&jwk)
 		if errGenerate != nil {
+			jaeger.TraceError(span, errors.WithMessage(errGenerate, "getJWKS: unable to generate public key"))
 			return errors.WithMessage(err, "getJWKS: unable to generate public key")
 		}
 		client.keys[jwk.Kid] = key
