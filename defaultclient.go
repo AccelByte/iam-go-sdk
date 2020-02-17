@@ -150,6 +150,7 @@ func (client *DefaultClient) ClientTokenGrant(opts ...Option) error {
 
 	go func() {
 		client.tokenRefreshActive = true
+
 		time.Sleep(refreshInterval)
 		client.refreshAccessToken(span)
 	}()
