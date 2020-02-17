@@ -121,3 +121,52 @@ You can check the health by:
 ```go
 client.HealthCheck()
 ```
+
+## Jaeger Tracing
+
+IAM service client supports Opentracing Jaeger Traces in Zipkin B3 format(multiple headers mode). Additionally, the client handles k8s istio traces and includes it into outbound calls.
+
+
+### Jaeger Tracing configuration
+To configure Jaegeer Client - provide Jaeger Agent `host:port` or Jaeger Collector URL and setup global tracer
+```go
+/*
+func InitGlobalTracer(
+    jaegerAgentHost string,
+    jaegerCollectorEndpoint string,
+    serviceName string,
+    realm string,
+)
+*/
+
+jaeger.InitGlobalTracer(jaegerAgentHost, "", "service-name", "node-name")
+// or
+jaeger.InitGlobalTracer("", jaegerCollectorURL, "service-name", "node-name")
+```
+
+### Jaeger Tracing usage
+Use API methods with received from the response context
+```go
+// istead of 
+validationResult, err := testClient.ValidatePermission(
+    claims,
+    requiredPermission,
+    permissionResources,
+)
+
+// use received from the request context
+validationResult, err := testClient.ValidatePermission(
+    claims,
+    requiredPermission,
+    permissionResources,
+    WithJaegerContext(ctx),
+)
+
+// or an empty context to start a new Jaeger Span
+validationResult, err := testClient.ValidatePermission(
+    claims,
+    requiredPermission,
+    permissionResources,
+    WithJaegerContext(context.Background()),
+)
+``` 
