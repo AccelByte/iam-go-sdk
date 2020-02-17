@@ -70,6 +70,7 @@ func (perm Permission) IsScheduled() bool {
 	if len(perm.CronSchedule) > 0 {
 		ok = perm.isRecurring()
 	}
+
 	if ok {
 		return ok
 	}
@@ -100,6 +101,7 @@ func (perm Permission) isRecurring() bool {
 func (perm Permission) isInRange() bool {
 	start, errStart := cronexpr.Parse(perm.RangeSchedule[0])
 	end, errEnd := cronexpr.Parse(perm.RangeSchedule[1])
+
 	if errStart != nil || errEnd != nil {
 		return true
 	}
@@ -111,6 +113,7 @@ func (perm Permission) isInRange() bool {
 	if !nextStart.IsZero() && nextStart.Sub(now) > time.Second {
 		return false
 	}
+
 	if nextEnd.IsZero() {
 		return false
 	}

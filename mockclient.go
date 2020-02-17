@@ -61,6 +61,7 @@ func (client *MockClient) ValidateAccessToken(accessToken string, opts ...Option
 	case MockUnauthorized, MockForbidden:
 		return false, nil
 	}
+
 	return true, nil
 }
 
@@ -80,6 +81,7 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Opt
 		claims.Roles = append(claims.Roles, MockForbidden)
 		claims.Permissions = append(claims.Permissions,
 			Permission{Resource: MockForbidden, Action: 0})
+
 		return claims, nil
 	}
 
@@ -100,6 +102,7 @@ func (client *MockClient) ValidatePermission(claims *JWTClaims,
 	if claims.Permissions[0].Resource == MockForbidden {
 		return false, nil
 	}
+
 	return true, nil
 }
 
@@ -108,6 +111,7 @@ func (client *MockClient) ValidateRole(requiredRoleID string, claims *JWTClaims,
 	if claims.Roles[0] == MockForbidden {
 		return false, nil
 	}
+
 	return true, nil
 }
 
@@ -136,6 +140,7 @@ func (client *MockClient) HasBan(claims *JWTClaims, banType string, opts ...Opti
 			return true
 		}
 	}
+
 	return false
 }
 

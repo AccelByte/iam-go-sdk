@@ -32,6 +32,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// nolint: funlen
 func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan opentracing.Span) (bool, error) {
 	span := jaeger.StartChildSpan(rootSpan, "client.validateAccessToken")
 	defer jaeger.Finish(span)
@@ -50,24 +51,25 @@ func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan op
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
-	resp := &http.Response{}
+
+	var responseStatusCode int
 
 	err = backoff.
 		Retry(
 			func() error {
-				var e error
-
 				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
-				resp, e = client.httpClient.Do(req)
+				resp, e := client.httpClient.Do(req)
 				if e != nil {
 					jaeger.TraceError(reqSpan, e)
 					return backoff.Permanent(e)
 				}
+				defer resp.Body.Close()
 
+				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, e)
 					return e
@@ -83,12 +85,12 @@ func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan op
 		return false, errors.Wrap(err, "validateAccessToken: unable to do HTTP request")
 	}
 
-	if resp.StatusCode == http.StatusUnauthorized {
+	if responseStatusCode == http.StatusUnauthorized {
 		jaeger.TraceError(span, errors.Wrap(errUnauthorized, "validateAccessToken: unauthorized"))
 		return false, errors.Wrap(errUnauthorized, "validateAccessToken: unauthorized")
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if responseStatusCode != http.StatusOK {
 		return false, nil
 	}
 
@@ -146,11 +148,11 @@ func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) {
 	defer jaeger.Finish(span)
 
 	var tokenRefreshInterval time.Duration
+
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
 
 	for {
-
 		client.tokenRefreshError = backoff.
 			Retry(
 				func() error {
@@ -180,6 +182,7 @@ func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) {
 	}
 }
 
+// nolint: funlen
 func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.Duration, error) {
 	span := jaeger.StartChildSpan(rootSpan, "client.clientTokenGrant")
 	defer jaeger.Finish(span)
@@ -202,29 +205,37 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
-	resp := &http.Response{}
+
+	var responseStatusCode int
+
+	var responseBodyBytes []byte
 
 	err = backoff.
 		Retry(
 			func() error {
-				var e error
-
 				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
-				resp, e = client.httpClient.Do(req)
+				resp, e := client.httpClient.Do(req)
 				if e != nil {
 					return backoff.Permanent(e)
 				}
+				defer resp.Body.Close()
 
+				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return e
 				}
 
-				jaeger.AddLog(reqSpan, "results", "-")
+				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				if e != nil {
+					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					return errors.Wrap(e, "clientTokenGrant: unable to read response body")
+				}
+
 				return nil
 			},
 			b,
@@ -235,19 +246,14 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to do HTTP request")
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if responseStatusCode != http.StatusOK {
 		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: endpoint returned non-OK"))
 		return 0, errors.Wrap(err, "clientTokenGrant: endpoint returned non-OK")
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to read response body"))
-		return 0, errors.Wrap(err, "clientTokenGrant: unable to read response body")
-	}
-
 	var tokenResponse *TokenResponse
-	err = json.Unmarshal(bodyBytes, &tokenResponse)
+
+	err = json.Unmarshal(responseBodyBytes, &tokenResponse)
 	if err != nil {
 		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to unmarshal response body"))
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to unmarshal response body")
@@ -255,5 +261,6 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 
 	client.clientAccessToken = tokenResponse.AccessToken
 	refreshInterval := time.Duration(float64(tokenResponse.ExpiresIn)*defaultTokenRefreshRate) * time.Second
+
 	return refreshInterval, nil
 }

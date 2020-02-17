@@ -10,3 +10,6 @@ test:
 coverage:
 	GO111MODULE=on go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out
+
+lint:
+	golangci-lint run --enable-all --disable=gochecknoinits,gochecknoglobals,scopelint

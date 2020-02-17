@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// nolint: dupl // most part of the test is identical
+// nolint: dupl
 func TestInfoLog(t *testing.T) {
 	ws := new(restful.WebService)
 	ws.Filter(Log("test", "iam", extractNull))

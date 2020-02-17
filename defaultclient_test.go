@@ -103,6 +103,7 @@ func init() {
 	}
 
 	var err error
+
 	signer, err = jose.NewSigner(jose.SigningKey{
 		Algorithm: jose.RS256,
 		Key: jose.JSONWebKey{
@@ -134,6 +135,7 @@ func init() {
 			if accessToken == invalid {
 				return false, nil
 			}
+
 			return true, nil
 		}
 }
@@ -145,6 +147,7 @@ func mustUnmarshalRSA(data string) *rsa.PrivateKey {
 	}
 
 	var key interface{}
+
 	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
 		key, err = x509.ParsePKCS8PrivateKey(block.Bytes)
@@ -152,9 +155,11 @@ func mustUnmarshalRSA(data string) *rsa.PrivateKey {
 			panic("failed to parse RSA key: " + err.Error())
 		}
 	}
+
 	if key, ok := key.(*rsa.PrivateKey); ok {
 		return key
 	}
+
 	panic("key is not of type *rsa.PrivateKey")
 }
 
@@ -174,7 +179,6 @@ func Test_GetClientToken(t *testing.T) {
 
 	mockHTTPClient := &httpClientMock{
 		doMock: func(req *http.Request) (*http.Response, error) {
-
 			tokenResp := TokenResponse{
 				AccessToken: mockAccessToken,
 			}
@@ -214,7 +218,6 @@ func Test_GetClientToken(t *testing.T) {
 func Test_StartLocalValidation(t *testing.T) {
 	mockHTTPClient := &httpClientMock{
 		doMock: func(req *http.Request) (*http.Response, error) {
-
 			resp := struct {
 				Keys
 				RevocationList
@@ -249,6 +252,7 @@ func Test_StartLocalValidation(t *testing.T) {
 	assert.True(t, defaultClient.localValidationActive, "local validation should be active")
 }
 
+// nolint: dupl
 func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
 	type testTable struct {
 		justiceFlag              int
@@ -279,6 +283,7 @@ func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
 	}
 }
 
+// nolint: dupl
 func Test_DefaultClientUserPhoneVerificationStatus(t *testing.T) {
 	type testTable struct {
 		justiceFlag              int
@@ -310,6 +315,7 @@ func Test_DefaultClientUserPhoneVerificationStatus(t *testing.T) {
 	}
 }
 
+// nolint: dupl
 func Test_DefaultClientUserAnonymousStatus(t *testing.T) {
 	type testTable struct {
 		justiceFlag              int
@@ -352,6 +358,7 @@ func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
 		Permissions: []Permission{grantedPermission}}
 
 	claims := generateClaims(t, userData)
+
 	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
 	if err != nil {
 		panic(err)
@@ -363,7 +370,10 @@ func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
 	assert.NotNil(t, claims, "claims should not nil")
 
 	// test tracing
-	claims, errValidateAndParseClaims = testClient.ValidateAndParseClaims(accessToken, WithJaegerContext(context.Background()))
+	claims, errValidateAndParseClaims = testClient.ValidateAndParseClaims(
+		accessToken,
+		WithJaegerContext(context.Background()),
+	)
 	assert.Nil(t, errValidateAndParseClaims, "access token is invalid")
 	assert.NotNil(t, claims, "claims should not nil")
 }
@@ -378,6 +388,7 @@ func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
 
 	claims := generateClaims(t, userData)
 	claims.Expiry = jwt.NewNumericDate(time.Now().UTC().Add(-time.Minute))
+
 	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
 	if err != nil {
 		panic(err)
@@ -389,11 +400,15 @@ func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
 	assert.Nil(t, claims, "claims should be nil")
 
 	// test tracing
-	claims, errValidateAndParseClaims = testClient.ValidateAndParseClaims(accessToken, WithJaegerContext(context.Background()))
+	claims, errValidateAndParseClaims = testClient.ValidateAndParseClaims(
+		accessToken,
+		WithJaegerContext(context.Background()),
+	)
 	assert.Error(t, errValidateAndParseClaims, "access token should be invalid")
 	assert.Nil(t, claims, "claims should be nil")
 }
 
+// nolint: funlen
 func Test_DefaultClientValidatePermission(t *testing.T) {
 	type testTable struct {
 		requiredResource string
@@ -460,7 +475,12 @@ func Test_DefaultClientValidatePermission(t *testing.T) {
 		assert.Equal(t, testCase.expectedResult, validationResult, "resource string validation does not match")
 
 		// test tracing
-		validationResult, _ = testClient.ValidatePermission(claims, requiredPermission, permissionResources, WithJaegerContext(context.Background()))
+		validationResult, _ = testClient.ValidatePermission(
+			claims,
+			requiredPermission,
+			permissionResources,
+			WithJaegerContext(context.Background()),
+		)
 		assert.Equal(t, testCase.expectedResult, validationResult, "resource string validation does not match")
 	}
 }
@@ -495,12 +515,18 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole(t *testing.T) {
 			"resource string %s validation on roles does not match", requiredPermission.Resource)
 
 		// test tracing
-		validationResult, _ = testClient.ValidatePermission(claims, requiredPermission, permissionResources, WithJaegerContext(context.Background()))
+		validationResult, _ = testClient.ValidatePermission(
+			claims,
+			requiredPermission,
+			permissionResources,
+			WithJaegerContext(context.Background()),
+		)
 		assert.Equal(t, testCase.expectedResult, validationResult,
 			"resource string %s validation on roles does not match", requiredPermission.Resource)
 	}
 }
 
+// nolint: funlen
 func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
 	type testTable struct {
 		requiredAction int
@@ -567,7 +593,12 @@ func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
 		assert.Equal(t, testCase.expectedResult, validationResult, "action bitmask validation does not match")
 
 		// test tracing
-		validationResult, _ = testClient.ValidatePermission(claims, requiredPermission, permissionResources, WithJaegerContext(context.Background()))
+		validationResult, _ = testClient.ValidatePermission(
+			claims,
+			requiredPermission,
+			permissionResources,
+			WithJaegerContext(context.Background()),
+		)
 		assert.Equal(t, testCase.expectedResult, validationResult, "action bitmask validation does not match")
 	}
 }
@@ -594,7 +625,11 @@ func Test_DefaultClientValidateRoleID_NotExist(t *testing.T) {
 	assert.False(t, validationResult, "resource roles id validation does not match")
 
 	// test tracing
-	validationResult, _ = testClient.ValidateRole("non-exist-required-role-id", claims, WithJaegerContext(context.Background()))
+	validationResult, _ = testClient.ValidateRole(
+		"non-exist-required-role-id",
+		claims,
+		WithJaegerContext(context.Background()),
+	)
 	assert.False(t, validationResult, "resource roles id validation does not match")
 }
 
@@ -621,6 +656,7 @@ func Test_DefaultClientValidateAccessToken_InvalidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to validate : %v", err)
 	}
+
 	assert.False(t, validationResult, "invalid direct verification should not be granted")
 
 	// test tracing
@@ -628,6 +664,7 @@ func Test_DefaultClientValidateAccessToken_InvalidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to validate : %v", err)
 	}
+
 	assert.False(t, validationResult, "invalid direct verification should not be granted")
 }
 
@@ -643,6 +680,7 @@ func Test_DefaultClientValidateAndParseClaims_RevokedUser(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
 	testClient.revokedUsers["e71d22e2b270449c90d4c15b89c3f994"] = time.Now().UTC()
 
 	claims, err = testClient.ValidateAndParseClaims(accessToken)
@@ -670,6 +708,7 @@ func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
 	testClient.revocationFilter.Put(bytes.NewBufferString(accessToken).Bytes())
 
 	claims, err = testClient.ValidateAndParseClaims(accessToken)
@@ -700,7 +739,7 @@ func Test_DefaultClientHasBan(t *testing.T) {
 	), "ban not found")
 }
 
-// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+// nolint: dupl
 func Test_ValidateAudience(t *testing.T) {
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
@@ -747,7 +786,7 @@ func Test_ValidateAudience(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+// nolint: dupl
 func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
@@ -794,7 +833,7 @@ func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+// nolint: dupl
 func Test_ValidateAudience_ClientNotFound(t *testing.T) {
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole},
 		Namespace: "accelbyte"}
@@ -834,7 +873,7 @@ func Test_ValidateAudience_ClientNotFound(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+// nolint: dupl
 func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole},
 		Namespace: "accelbyte"}
@@ -880,7 +919,7 @@ func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-// nolint: dupl, it is needed since the linter considers any test using the same prefix as duplicate.
+// nolint: dupl
 // To prevent accidentally passing an empty claim.
 func Test_ValidateAudience_ClaimsIsNil(t *testing.T) {
 	mockClient := &DefaultClient{
@@ -915,7 +954,9 @@ func Test_ValidateScope(t *testing.T) {
 
 func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
 	t.Helper()
+
 	tNow := time.Now().UTC()
+
 	return &JWTClaims{
 		DisplayName:  userData.DisplayName,
 		Namespace:    userData.Namespace,

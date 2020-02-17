@@ -36,20 +36,25 @@ func (client *DefaultClient) refreshRevocationList(rootSpan opentracing.Span) {
 
 	time.Sleep(client.config.RevocationListRefreshInterval)
 	backOffTime := time.Second
+
 	for {
 		client.revocationListRefreshError = client.getRevocationList(span)
 		if client.revocationListRefreshError != nil {
 			time.Sleep(backOffTime)
+
 			if backOffTime < maxBackOffTime {
 				backOffTime *= 2
 			}
+
 			continue
 		}
+
 		backOffTime = time.Second
 		time.Sleep(client.config.RevocationListRefreshInterval)
 	}
 }
 
+// nolint: dupl,funlen
 func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error {
 	span := jaeger.StartChildSpan(rootSpan, "client.getRevocationList")
 	defer jaeger.Finish(span)
@@ -64,27 +69,36 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
-	resp := &http.Response{}
+
+	var responseStatusCode int
+
+	var responseBodyBytes []byte
 
 	err = backoff.
 		Retry(
 			func() error {
-				var e error
-
 				reqSpan := jaeger.StartChildSpan(span, "client.getRevocationList.Retry")
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
-				resp, e = client.httpClient.Do(req)
+				resp, e := client.httpClient.Do(req)
 
 				if e != nil {
 					return backoff.Permanent(e)
 				}
+				defer resp.Body.Close()
 
+				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return e
+				}
+
+				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				if e != nil {
+					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					return errors.Wrap(e, "getRevocationList: unable to read HTTP response body")
 				}
 
 				return nil
@@ -97,19 +111,14 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 		return errors.Wrap(err, "getRevocationList: unable to do HTTP request")
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if responseStatusCode != http.StatusOK {
 		jaeger.TraceError(span, errors.Wrap(err, "getRevocationList: endpoint returned non-OK"))
 		return errors.Wrap(err, "getRevocationList: endpoint returned non-OK")
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "getRevocationList: unable to read HTTP response body"))
-		return errors.Wrap(err, "getRevocationList: unable to read HTTP response body")
-	}
-
 	var revocationList *RevocationList
-	err = json.Unmarshal(bodyBytes, &revocationList)
+
+	err = json.Unmarshal(responseBodyBytes, &revocationList)
 	if err != nil {
 		jaeger.TraceError(span, errors.Wrap(err, "getRevocationList: unable to unmarshal response body"))
 		return errors.Wrap(err, "getRevocationList: unable to unmarshal response body")
@@ -117,8 +126,10 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 
 	client.revokedUsers = make(map[string]time.Time)
 	client.revocationFilter = bloom.From(revocationList.RevokedTokens.B, revocationList.RevokedTokens.K)
+
 	for _, revokedUser := range revocationList.RevokedUsers {
 		client.revokedUsers[revokedUser.ID] = revokedUser.RevokedAt
 	}
+
 	return nil
 }

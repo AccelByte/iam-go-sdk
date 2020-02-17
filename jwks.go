@@ -56,20 +56,25 @@ func (client *DefaultClient) refreshJWKS(rootSpan opentracing.Span) {
 
 	backOffTime := time.Second
 	time.Sleep(client.config.JWKSRefreshInterval)
+
 	for {
 		client.jwksRefreshError = client.getJWKS(span)
 		if client.jwksRefreshError != nil {
 			time.Sleep(backOffTime)
+
 			if backOffTime < maxBackOffTime {
 				backOffTime *= 2
 			}
+
 			continue
 		}
+
 		backOffTime = time.Second
 		time.Sleep(client.config.JWKSRefreshInterval)
 	}
 }
 
+// nolint: funlen
 func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
 	span := jaeger.StartChildSpan(rootSpan, "client.getJWKS")
 	defer jaeger.Finish(span)
@@ -84,8 +89,12 @@ func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
-	resp := &http.Response{}
 
+	var responseStatusCode int
+
+	var responseBodyBytes []byte
+
+	// nolint: dupl
 	err = backoff.
 		Retry(
 			func() error {
@@ -96,15 +105,22 @@ func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
-				resp, e = client.httpClient.Do(req)
-
+				resp, e := client.httpClient.Do(req)
 				if e != nil {
 					return backoff.Permanent(e)
 				}
+				defer resp.Body.Close()
 
+				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return e
+				}
+
+				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				if e != nil {
+					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					return errors.Wrap(e, "getJWKS: unable to read response body")
 				}
 
 				return nil
@@ -117,31 +133,28 @@ func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
 		return errors.Wrap(err, "getJWKS: unable to do HTTP request to get JWKS")
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if responseStatusCode != http.StatusOK {
 		jaeger.TraceError(span, errors.Wrap(err, "getJWKS: endpoint returned non-OK"))
 		return errors.Wrap(err, "getJWKS: endpoint returned non-OK")
 	}
 
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "getJWKS: unable to read response body"))
-		return errors.Wrap(err, "getJWKS: unable to read response body")
-	}
-
 	var jwks Keys
-	err = json.Unmarshal(respBody, &jwks)
+
+	err = json.Unmarshal(responseBodyBytes, &jwks)
 	if err != nil {
 		jaeger.TraceError(span, errors.Wrap(err, "getJWKS: unable to unmarshal response body"))
 		return errors.Wrap(err, "getJWKS: unable to unmarshal response body")
 	}
 
 	client.keys = make(map[string]*rsa.PublicKey)
+
 	for _, jwk := range jwks.Keys {
 		key, errGenerate := generatePublicKey(&jwk)
 		if errGenerate != nil {
 			jaeger.TraceError(span, errors.WithMessage(errGenerate, "getJWKS: unable to generate public key"))
 			return errors.WithMessage(err, "getJWKS: unable to generate public key")
 		}
+
 		client.keys[jwk.Kid] = key
 	}
 
@@ -153,6 +166,7 @@ func (client *DefaultClient) getPublicKey(keyID string) (*rsa.PublicKey, error) 
 	if !ok {
 		return nil, errors.New("getPublicKey: public key doesn't exist")
 	}
+
 	return key, nil
 }
 
@@ -175,6 +189,7 @@ func getModulus(jwkN string) (*big.Int, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "getModulus: unable to decode JWK modulus string")
 	}
+
 	n := big.NewInt(0)
 	n.SetBytes(decodedN)
 
@@ -196,7 +211,9 @@ func getPublicExponent(jwkE string) (int, error) {
 	}
 
 	eReader := bytes.NewReader(eBytes)
+
 	var e uint64
+
 	err = binary.Read(eReader, binary.BigEndian, &e)
 	if err != nil {
 		return 0, errors.Wrap(err, "getPublicExponent: unable to read JWK exponent bytes")

@@ -102,9 +102,11 @@ func NewDefaultClient(config *Config) Client {
 	if config.RolesCacheExpirationTime <= 0 {
 		config.RolesCacheExpirationTime = defaultRoleCacheTime
 	}
+
 	if config.JWKSRefreshInterval <= 0 {
 		config.JWKSRefreshInterval = defaultJWKSRefreshInterval
 	}
+
 	if config.RevocationListRefreshInterval <= 0 {
 		config.RevocationListRefreshInterval = defaultRevocationListRefreshInterval
 	}
@@ -124,6 +126,7 @@ func NewDefaultClient(config *Config) Client {
 	client.remoteTokenValidation = client.validateAccessToken
 
 	debug = config.Debug
+
 	log("NewDefaultClient: debug enabled")
 
 	return client
@@ -133,11 +136,13 @@ func NewDefaultClient(config *Config) Client {
 func (client *DefaultClient) ClientTokenGrant(opts ...Option) error {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ClientTokenGrant")
+
 	defer jaeger.Finish(span)
 
 	refreshInterval, err := client.clientTokenGrant(span)
 	if err != nil {
 		jaeger.TraceError(span, err)
+
 		return logAndReturnErr(
 			errors.WithMessage(err,
 				"ClientTokenGrant: unable to do token grant"))
@@ -150,6 +155,7 @@ func (client *DefaultClient) ClientTokenGrant(opts ...Option) error {
 	}()
 
 	log("ClientTokenGrant: token grant success")
+
 	return nil
 }
 
@@ -157,6 +163,7 @@ func (client *DefaultClient) ClientTokenGrant(opts ...Option) error {
 func (client *DefaultClient) ClientToken(opts ...Option) string {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ClientToken")
+
 	defer jaeger.Finish(span)
 
 	return client.clientAccessToken
@@ -167,12 +174,14 @@ func (client *DefaultClient) ClientToken(opts ...Option) string {
 func (client *DefaultClient) StartLocalValidation(opts ...Option) error {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.StartLocalValidation")
+
 	defer jaeger.Finish(span)
 
 	err := client.getJWKS(span)
 	if err != nil {
 		jaeger.TraceError(span, errors.WithMessage(err,
 			"StartLocalValidation: unable to get JWKS"))
+
 		return logAndReturnErr(
 			errors.WithMessage(err,
 				"StartLocalValidation: unable to get JWKS"))
@@ -182,17 +191,20 @@ func (client *DefaultClient) StartLocalValidation(opts ...Option) error {
 	if err != nil {
 		jaeger.TraceError(span, errors.WithMessage(err,
 			"StartLocalValidation: unable to get revocation list"))
+
 		return logAndReturnErr(
 			errors.WithMessage(err,
 				"StartLocalValidation: unable to get revocation list"))
 	}
 
 	go client.refreshJWKS(span)
+
 	go client.refreshRevocationList(span)
 
 	client.localValidationActive = true
 
 	log("StartLocalValidation: local validation activated")
+
 	return nil
 }
 
@@ -200,9 +212,11 @@ func (client *DefaultClient) StartLocalValidation(opts ...Option) error {
 func (client *DefaultClient) ValidateAccessToken(accessToken string, opts ...Option) (bool, error) {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
+
 	defer jaeger.Finish(span)
 
 	var isValid bool
+
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
 
@@ -244,6 +258,7 @@ func (client *DefaultClient) ValidateAccessToken(accessToken string, opts ...Opt
 func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...Option) (*JWTClaims, error) {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
+
 	defer jaeger.Finish(span)
 
 	if !client.localValidationActive {
@@ -251,6 +266,7 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...
 			errors.Wrap(errNoLocalValidation,
 				"ValidateAndParseClaims: unable to validate claims"))
 		jaeger.TraceError(span, err)
+
 		return nil, err
 	}
 
@@ -260,6 +276,7 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...
 			errors.WithMessage(err,
 				"ValidateAndParseClaims: unable to validate JWT"))
 		jaeger.TraceError(span, err)
+
 		return nil, err
 	}
 
@@ -268,6 +285,7 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...
 			errors.Wrap(errUserRevoked,
 				"ValidateAndParseClaims: user (owner) of JWT is revoked"))
 		jaeger.TraceError(span, err)
+
 		return nil, err
 	}
 
@@ -276,10 +294,12 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...
 			errors.Wrap(errTokenRevoked,
 				"ValidateAndParseClaims: token is revoked"))
 		jaeger.TraceError(span, err)
+
 		return nil, err
 	}
 
 	log("ValidateAndParseClaims: JWT validated")
+
 	return claims, nil
 }
 
@@ -288,10 +308,12 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...
 // 		{Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
 // permissionResources: resource string to replace the `{}` placeholder in
 // 		`requiredPermission`, example: p["{namespace}"] = "accelbyte"
+// nolint: funlen
 func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 	requiredPermission Permission, permissionResources map[string]string, opts ...Option) (bool, error) {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
+
 	defer jaeger.Finish(span)
 
 	if claims == nil {
@@ -323,7 +345,6 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 
 					grantedRolePermissions, e = client.getRolePermission(roleID, span)
 					if e != nil {
-
 						switch errors.Cause(e) {
 						case errRoleNotFound:
 							return nil
@@ -345,6 +366,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 				errors.WithMessage(err,
 					"ValidatePermission: unable to get role perms"))
 			jaeger.TraceError(span, err)
+
 			return false, err
 		}
 
@@ -352,12 +374,14 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
 			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
 			log("ValidatePermission: permission allowed to access resource")
+
 			return true, nil
 		}
 	}
 
 	jaeger.AddLog(span, "msg", "ValidatePermission: permission not allowed to access resource")
 	log("ValidatePermission: permission not allowed to access resource")
+
 	return false, nil
 }
 
@@ -365,6 +389,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 func (client *DefaultClient) ValidateRole(requiredRoleID string, claims *JWTClaims, opts ...Option) (bool, error) {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
+
 	defer jaeger.Finish(span)
 
 	for _, grantedRoleID := range claims.Roles {
@@ -375,6 +400,7 @@ func (client *DefaultClient) ValidateRole(requiredRoleID string, claims *JWTClai
 	}
 
 	log("ValidateRole: role not allowed to access resource")
+
 	return false, nil
 }
 
@@ -382,11 +408,13 @@ func (client *DefaultClient) ValidateRole(requiredRoleID string, claims *JWTClai
 func (client *DefaultClient) UserPhoneVerificationStatus(claims *JWTClaims, opts ...Option) (bool, error) {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
+
 	defer jaeger.Finish(span)
 
 	phoneVerified := claims.JusticeFlags&UserStatusPhoneVerified == UserStatusPhoneVerified
 
 	log("UserPhoneVerificationStatus: ", phoneVerified)
+
 	return phoneVerified, nil
 }
 
@@ -394,11 +422,13 @@ func (client *DefaultClient) UserPhoneVerificationStatus(claims *JWTClaims, opts
 func (client *DefaultClient) UserEmailVerificationStatus(claims *JWTClaims, opts ...Option) (bool, error) {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.UserEmailVerificationStatus")
+
 	defer jaeger.Finish(span)
 
 	emailVerified := claims.JusticeFlags&UserStatusEmailVerified == UserStatusEmailVerified
 
 	log("UserEmailVerificationStatus: ", emailVerified)
+
 	return emailVerified, nil
 }
 
@@ -406,11 +436,13 @@ func (client *DefaultClient) UserEmailVerificationStatus(claims *JWTClaims, opts
 func (client *DefaultClient) UserAnonymousStatus(claims *JWTClaims, opts ...Option) (bool, error) {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.UserAnonymousStatus")
+
 	defer jaeger.Finish(span)
 
 	anonymousStatus := claims.JusticeFlags&UserStatusAnonymous == UserStatusAnonymous
 
 	log("UserAnonymousStatus: ", anonymousStatus)
+
 	return anonymousStatus, nil
 }
 
@@ -418,6 +450,7 @@ func (client *DefaultClient) UserAnonymousStatus(claims *JWTClaims, opts ...Opti
 func (client *DefaultClient) HasBan(claims *JWTClaims, banType string, opts ...Option) bool {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.HasBan")
+
 	defer jaeger.Finish(span)
 
 	for _, ban := range claims.Bans {
@@ -428,6 +461,7 @@ func (client *DefaultClient) HasBan(claims *JWTClaims, banType string, opts ...O
 	}
 
 	log("HasBan: user not banned")
+
 	return false
 }
 
@@ -435,6 +469,7 @@ func (client *DefaultClient) HasBan(claims *JWTClaims, banType string, opts ...O
 func (client *DefaultClient) HealthCheck(opts ...Option) bool {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.HealthCheck")
+
 	defer jaeger.Finish(span)
 
 	if client.jwksRefreshError != nil {
@@ -456,13 +491,16 @@ func (client *DefaultClient) HealthCheck(opts ...Option) bool {
 	}
 
 	log("HealthCheck: all OK")
+
 	return true
 }
 
 // ValidateAudience validate audience of user access token
+// nolint: funlen
 func (client *DefaultClient) ValidateAudience(claims *JWTClaims, opts ...Option) error {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAudience")
+
 	defer jaeger.Finish(span)
 
 	if claims == nil {
@@ -509,6 +547,7 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims, opts ...Option)
 
 		if err != nil {
 			jaeger.TraceError(span, errors.WithMessage(err, "ValidateAudience: get client detail returns error"))
+
 			return logAndReturnErr(
 				errors.WithMessage(err,
 					"ValidateAudience: get client detail returns error"))
@@ -518,6 +557,7 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims, opts ...Option)
 	}
 
 	isAllowed := false
+
 	for _, reqAud := range claims.Audience {
 		if reqAud == baseURI {
 			isAllowed = true
@@ -527,12 +567,14 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims, opts ...Option)
 
 	if !isAllowed {
 		jaeger.TraceError(span, errors.Wrap(errInvalidAud, "ValidateAudience: audience is not valid"))
+
 		return logAndReturnErr(
 			errors.Wrap(errInvalidAud,
 				"ValidateAudience: audience is not valid"))
 	}
 
 	log("ValidateAudience: audience is valid")
+
 	return nil
 }
 
@@ -540,11 +582,13 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims, opts ...Option)
 func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string, opts ...Option) error {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
+
 	defer jaeger.Finish(span)
 
 	scopes := strings.Split(claims.Scope, scopeSeparator)
 
 	var isValid = false
+
 	for _, scope := range scopes {
 		if reqScope == scope {
 			isValid = true
@@ -556,20 +600,24 @@ func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string, o
 		jaeger.TraceError(span, errors.Wrap(
 			errInvalidScope,
 			"ValidateScope: invalid scope"))
+
 		return logAndReturnErr(errors.Wrap(
 			errInvalidScope,
 			"ValidateScope: invalid scope"))
 	}
 
 	log("ValidateScope: scope valid")
+
 	return nil
 }
 
 // getClientInformation get client base URI
 // need client access token for authorization
+// nolint: funlen
 func (client *DefaultClient) getClientInformation(getClientInformationURL string, opts ...Option) (err error) {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
+
 	defer jaeger.Finish(span)
 
 	clientInformation := struct {
@@ -586,8 +634,12 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
-	resp := &http.Response{}
 
+	var responseStatusCode int
+
+	var responseBodyBytes []byte
+
+	// nolint: dupl
 	err = backoff.
 		Retry(
 			func() error {
@@ -598,15 +650,22 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
-				resp, e = client.httpClient.Do(req)
-
+				resp, e := client.httpClient.Do(req)
 				if e != nil {
 					return backoff.Permanent(e)
 				}
+				defer resp.Body.Close()
 
+				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return e
+				}
+
+				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				if e != nil {
+					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					return errors.Wrap(e, "getClientInformation: unable to read body response")
 				}
 
 				return nil
@@ -619,25 +678,22 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 		return errors.Wrap(err, "getClientInformation: unable to do HTTP request")
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "getClientInformation: unable to read body response"))
-		return errors.Wrap(err, "getClientInformation: unable to read body response")
-	}
-
-	if resp.StatusCode == http.StatusUnauthorized {
+	if responseStatusCode == http.StatusUnauthorized {
 		jaeger.TraceError(span, errors.Wrap(errUnauthorized, "getClientInformation: unauthorized"))
 		return errors.Wrap(errUnauthorized, "getClientInformation: unauthorized")
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		jaeger.TraceError(span, errors.Errorf("getClientInformation: unable to get client information: error code : %d, error message : %s",
-			resp.StatusCode, string(bodyBytes)))
+	if responseStatusCode != http.StatusOK {
+		jaeger.TraceError(span,
+			errors.Errorf(
+				"getClientInformation: unable to get client information: error code : %d, error message : %s",
+				responseStatusCode, string(responseBodyBytes)))
+
 		return errors.Errorf("getClientInformation: unable to get client information: error code : %d, error message : %s",
-			resp.StatusCode, string(bodyBytes))
+			responseStatusCode, string(responseBodyBytes))
 	}
 
-	err = json.Unmarshal(bodyBytes, &clientInformation)
+	err = json.Unmarshal(responseBodyBytes, &clientInformation)
 	if err != nil {
 		jaeger.TraceError(span, errors.Wrap(err, "getClientInformation: unable to unmarshal response body"))
 		return errors.Wrap(err, "getClientInformation: unable to unmarshal response body")
