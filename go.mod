@@ -7,6 +7,7 @@ require (
 	github.com/AccelByte/go-jose v2.1.4+incompatible
 	github.com/AccelByte/go-restful-plugins/v3 v3.1.2
 	github.com/cenkalti/backoff v2.2.1+incompatible
+	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/gorhill/cronexpr v0.0.0-20180427100037-88b0669f7d75
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
