@@ -1,3 +1,13 @@
+Release v1.1.4 (2020-02-20)
+===========================
+### Fixed
+1. Fix return of role permissions
+
+Release v1.1.3 (2019-11-04)
+===========================
+### Fixed
+1. Fix json tag in JWTBan
+
 Release v1.1.2 (2019-10-02)
 ===========================
 ### Changed

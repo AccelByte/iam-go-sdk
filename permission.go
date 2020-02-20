@@ -92,7 +92,9 @@ func (client *DefaultClient) actionAllowed(grantedAction int, requiredAction int
 
 func (client *DefaultClient) getRolePermission(roleID string) ([]Permission, error) {
 	if cachedRolePermission, found := client.rolePermissionCache.Get(roleID); found {
-		return cachedRolePermission.([]Permission), nil
+		var rolePermissions = make([]Permission, len(cachedRolePermission.([]Permission)))
+		copy(rolePermissions, cachedRolePermission.([]Permission))
+		return rolePermissions, nil
 	}
 
 	req, err := http.NewRequest("GET", client.config.BaseURL+getRolePath+"/"+roleID, nil)
@@ -154,7 +156,10 @@ func (client *DefaultClient) getRolePermission(roleID string) ([]Permission, err
 		return nil, errors.Wrap(err, "getRolePermission: unable to unmarshal response body")
 	}
 
+	var rolePermissions = make([]Permission, len(role.Permissions))
+	copy(rolePermissions, role.Permissions)
+
 	client.rolePermissionCache.Set(roleID, role.Permissions, cache.DefaultExpiration)
 
-	return role.Permissions, nil
+	return rolePermissions, nil
 }
