@@ -18,11 +18,14 @@ package iam
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 
+	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
 	"github.com/cenkalti/backoff"
+	"github.com/opentracing/opentracing-go"
 	"github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
 )
@@ -33,11 +36,13 @@ func (client *DefaultClient) permissionAllowed(grantedPermissions []Permission, 
 		if grantedPermission.IsScheduled() {
 			grantedAction = grantedPermission.ScheduledAction
 		}
+
 		if client.resourceAllowed(grantedPermission.Resource, requiredPermission.Resource) &&
 			client.actionAllowed(grantedAction, requiredPermission.Action) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -49,6 +54,7 @@ func (client *DefaultClient) applyUserPermissionResourceValues(
 		grantedPermissions[i].Resource = strings.Replace(
 			grantedPermissions[i].Resource, "{namespace}", claims.Namespace, -1)
 	}
+
 	return grantedPermissions
 }
 
@@ -62,9 +68,11 @@ func (client *DefaultClient) resourceAllowed(accessPermissionResource string, re
 	if minSectionLen > requiredPermResSectionLen {
 		minSectionLen = requiredPermResSectionLen
 	}
+
 	for i := 0; i < minSectionLen; i++ {
 		userSection := accessPermResSections[i]
 		requiredSection := requiredPermResSections[i]
+
 		if userSection != requiredSection && userSection != "*" {
 			return false
 		}
@@ -83,6 +91,7 @@ func (client *DefaultClient) resourceAllowed(accessPermissionResource string, re
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -90,7 +99,11 @@ func (client *DefaultClient) actionAllowed(grantedAction int, requiredAction int
 	return grantedAction&requiredAction == requiredAction
 }
 
-func (client *DefaultClient) getRolePermission(roleID string) ([]Permission, error) {
+// nolint: funlen
+func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentracing.Span) ([]Permission, error) {
+	span := jaeger.StartChildSpan(rootSpan, "client.getRolePermission")
+	defer jaeger.Finish(span)
+
 	if cachedRolePermission, found := client.rolePermissionCache.Get(roleID); found {
 		var rolePermissions = make([]Permission, len(cachedRolePermission.([]Permission)))
 		copy(rolePermissions, cachedRolePermission.([]Permission))
@@ -107,20 +120,35 @@ func (client *DefaultClient) getRolePermission(roleID string) ([]Permission, err
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
-	resp := &http.Response{}
+
+	var responseStatusCode int
+
+	var responseBodyBytes []byte
 
 	err = backoff.
 		Retry(
 			func() error {
-				var e error
-				resp, e = client.httpClient.Do(req)
+				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer jaeger.Finish(reqSpan)
+				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
+				logErr(jErr)
 
+				resp, e := client.httpClient.Do(req)
 				if e != nil {
 					return backoff.Permanent(e)
 				}
+				defer resp.Body.Close()
 
+				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
+					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return e
+				}
+
+				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				if e != nil {
+					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					return errors.Wrap(e, "getRolePermission: unable to read response body")
 				}
 
 				return nil
@@ -129,30 +157,32 @@ func (client *DefaultClient) getRolePermission(roleID string) ([]Permission, err
 		)
 
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "getRolePermission: unable to do HTTP request"))
 		return nil, errors.Wrap(err, "getRolePermission: unable to do HTTP request")
 	}
 
-	switch resp.StatusCode {
+	switch responseStatusCode {
 	case http.StatusOK:
 		// do nothing
 	case http.StatusUnauthorized:
+		jaeger.TraceError(span, errors.Wrap(errUnauthorized, "getRolePermission: unauthorized"))
 		return nil, errors.Wrap(errUnauthorized, "getRolePermission: unauthorized")
 	case http.StatusForbidden:
+		jaeger.TraceError(span, errors.Wrap(errForbidden, "getRolePermission: forbidden"))
 		return nil, errors.Wrap(errForbidden, "getRolePermission: forbidden")
 	case http.StatusNotFound:
+		jaeger.TraceError(span, errors.Wrap(errRoleNotFound, "getRolePermission: not found"))
 		return nil, errors.Wrap(errRoleNotFound, "getRolePermission: not found")
 	default:
-		return nil, errors.New("unexpected error: " + http.StatusText(resp.StatusCode))
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "getRolePermission: unable to read response body")
+		jaeger.TraceError(span, errors.New("unexpected error: "+http.StatusText(responseStatusCode)))
+		return nil, errors.New("unexpected error: " + http.StatusText(responseStatusCode))
 	}
 
 	var role Role
-	err = json.Unmarshal(bodyBytes, &role)
+
+	err = json.Unmarshal(responseBodyBytes, &role)
 	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "getRolePermission: unable to unmarshal response body"))
 		return nil, errors.Wrap(err, "getRolePermission: unable to unmarshal response body")
 	}
 

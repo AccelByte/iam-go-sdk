@@ -16,6 +16,10 @@
 
 package iam
 
+import (
+	"context"
+)
+
 // Client provides interface for IAM Client
 // It can be used as mocking point
 // usage example:
@@ -39,20 +43,20 @@ package iam
 //
 type Client interface {
 	// ClientTokenGrant starts client token grant to get client bearer token for role caching
-	ClientTokenGrant() error
+	ClientTokenGrant(opts ...Option) error
 
 	// ClientToken returns client access token
-	ClientToken() string
+	ClientToken(opts ...Option) string
 
 	// StartLocalValidation starts goroutines to refresh JWK and revocation list periodically
 	// this enables local token validation
-	StartLocalValidation() error
+	StartLocalValidation(opts ...Option) error
 
 	// ValidateAccessToken validates access token by calling IAM service
-	ValidateAccessToken(accessToken string) (bool, error)
+	ValidateAccessToken(accessToken string, opts ...Option) (bool, error)
 
 	// ValidateAndParseClaims validates access token locally and returns the JWT claims contained in the token
-	ValidateAndParseClaims(accessToken string) (*JWTClaims, error)
+	ValidateAndParseClaims(accessToken string, opts ...Option) (*JWTClaims, error)
 
 	// ValidatePermission validates if an access token has right for a specific permission
 	// requiredPermission: permission to access resource, example:
@@ -60,29 +64,51 @@ type Client interface {
 	// permissionResources: resource string to replace the `{}` placeholder in
 	// 		`requiredPermission`, example: p["{namespace}"] = "accelbyte"
 	ValidatePermission(claims *JWTClaims, requiredPermission Permission,
-		permissionResources map[string]string) (bool, error)
+		permissionResources map[string]string, opts ...Option) (bool, error)
 
 	// ValidateRole validates if an access token has a specific role
-	ValidateRole(requiredRoleID string, claims *JWTClaims) (bool, error)
+	ValidateRole(requiredRoleID string, claims *JWTClaims, opts ...Option) (bool, error)
 
 	// UserPhoneVerificationStatus gets user phone verification status on access token
-	UserPhoneVerificationStatus(claims *JWTClaims) (bool, error)
+	UserPhoneVerificationStatus(claims *JWTClaims, opts ...Option) (bool, error)
 
 	// UserEmailVerificationStatus gets user email verification status on access token
-	UserEmailVerificationStatus(claims *JWTClaims) (bool, error)
+	UserEmailVerificationStatus(claims *JWTClaims, opts ...Option) (bool, error)
 
 	// UserAnonymousStatus gets user anonymous status on access token
-	UserAnonymousStatus(claims *JWTClaims) (bool, error)
+	UserAnonymousStatus(claims *JWTClaims, opts ...Option) (bool, error)
 
 	// HasBan validates if certain ban exist
-	HasBan(claims *JWTClaims, banType string) bool
+	HasBan(claims *JWTClaims, banType string, opts ...Option) bool
 
 	// HealthCheck lets caller know the health of the IAM client
-	HealthCheck() bool
+	HealthCheck(opts ...Option) bool
 
 	// ValidateAudience validate audience of user access token
-	ValidateAudience(claims *JWTClaims) error
+	ValidateAudience(claims *JWTClaims, opts ...Option) error
 
 	// ValidateScope validate scope of user access token
-	ValidateScope(claims *JWTClaims, scope string) error
+	ValidateScope(claims *JWTClaims, scope string, opts ...Option) error
+}
+
+type Options struct {
+	jaegerCtx context.Context
+}
+
+type Option func(*Options)
+
+func WithJaegerContext(ctx context.Context) Option {
+	return func(o *Options) {
+		o.jaegerCtx = ctx
+	}
+}
+
+func processOptions(opts []Option) *Options {
+	options := &Options{}
+
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	return options
 }
