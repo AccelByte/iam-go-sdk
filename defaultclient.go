@@ -334,8 +334,9 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
 
-	for _, roleID := range claims.Roles {
+	for _, namespaceRole := range claims.NamespaceRoles {
 		grantedRolePermissions := make([]Permission, 0)
+
 		err := backoff.
 			Retry(
 				func() error {
@@ -344,7 +345,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 					reqSpan := jaeger.StartChildSpan(span, "client.ValidatePermission.Retry")
 					defer jaeger.Finish(reqSpan)
 
-					grantedRolePermissions, e = client.getRolePermission(roleID, span)
+					grantedRolePermissions, e = client.getRolePermission(namespaceRole.RoleID, span)
 					if e != nil {
 						switch errors.Cause(e) {
 						case errRoleNotFound:
@@ -371,7 +372,8 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 			return false, err
 		}
 
-		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims)
+		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims,
+			namespaceRole.Namespace)
 		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
 			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
 			log("ValidatePermission: permission allowed to access resource")

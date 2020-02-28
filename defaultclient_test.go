@@ -41,6 +41,7 @@ import (
 
 const (
 	defaultUserRole   = "2251438839e948d783ec0e5281daf05b"
+	mockUserRole      = "9a59f28b622e43f4a6edb214a13bb8aa"
 	keyID             = "testKey"
 	invalid           = "invalid"
 	testJWTPrivateKey = `-----BEGIN RSA PRIVATE KEY-----
@@ -80,6 +81,7 @@ type tokenUserData struct {
 	PlatformID     string
 	PlatformUserID string
 	Roles          []string
+	NamespaceRoles []NamespaceRole `json:"namespace_roles"`
 	Permissions    []Permission
 	JusticeFlags   int `json:"jflgs"`
 }
@@ -125,6 +127,20 @@ func init() {
 		[]Permission{
 			{
 				Resource: "NAMESPACE:{namespace}:USER:{userId}:ORDER",
+				Action:   ActionCreate | ActionRead | ActionUpdate,
+			},
+		},
+		cache.DefaultExpiration)
+
+	testClient.rolePermissionCache.Set(
+		mockUserRole,
+		[]Permission{
+			{
+				Resource: "NAMESPACE:*:USER:{userId}:FRIENDS",
+				Action:   ActionCreate | ActionRead | ActionUpdate,
+			},
+			{
+				Resource: "NAMESPACE:*:USER:*:SLOTDATA",
 				Action:   ActionCreate | ActionRead | ActionUpdate,
 			},
 		},
@@ -485,7 +501,7 @@ func Test_DefaultClientValidatePermission(t *testing.T) {
 	}
 }
 
-func Test_DefaultClientValidatePermission_ResourceStringOnRole(t *testing.T) {
+func Test_DefaultClientValidatePermission_ResourceStringOnRole_HaveValidRole(t *testing.T) {
 	type testTable struct {
 		requiredResource string
 		expectedResult   bool
@@ -493,9 +509,19 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole(t *testing.T) {
 
 	testCases := []testTable{
 		{requiredResource: "NAMESPACE:foo:USER:888:ORDER", expectedResult: true},
+		{requiredResource: "NAMESPACE:foo:USER:888:FRIENDS", expectedResult: true},
+		{requiredResource: "NAMESPACE:baz:USER:888:ORDER", expectedResult: true},
+		{requiredResource: "NAMESPACE:baz:USER:888:ORDER", expectedResult: true},
+		{requiredResource: "NAMESPACE:baz:USER:888:ORDER", expectedResult: true},
+		{requiredResource: "NAMESPACE:baz:USER:888:FRIENDS", expectedResult: true},
+		{requiredResource: "NAMESPACE:bar:USER:888:FRIENDS", expectedResult: true},
+		{requiredResource: "NAMESPACE:*:USER:*:SLOTDATA", expectedResult: true},
 		{requiredResource: "NAMESPACE:bar:USER:888:ORDER", expectedResult: false},
-		{requiredResource: "NAMESPACE:foo:USER:888:ORDER", expectedResult: true},
 		{requiredResource: "NAMESPACE:foo:USER:999:ORDER", expectedResult: false},
+		{requiredResource: "NAMESPACE:bar:USER:888:ORDER", expectedResult: false},
+		{requiredResource: "NAMESPACE:baz:USER:999:ORDER", expectedResult: false},
+		{requiredResource: "NAMESPACE:foo:USER:999:FRIENDS", expectedResult: false},
+		{requiredResource: "NAMESPACE:baz:USER:999:FRIENDS", expectedResult: false},
 	}
 
 	for _, testCase := range testCases {
@@ -504,7 +530,63 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole(t *testing.T) {
 			Action:   ActionCreate | ActionRead | ActionUpdate,
 		}
 
-		userData := &tokenUserData{UserID: "888", Namespace: "foo", Roles: []string{defaultUserRole}}
+		userData := &tokenUserData{UserID: "888", Namespace: "bar",
+			Roles: []string{defaultUserRole}, NamespaceRoles: []NamespaceRole{
+				{
+					RoleID:    defaultUserRole,
+					Namespace: "foo",
+				},
+				{
+					RoleID:    defaultUserRole,
+					Namespace: "baz",
+				},
+				{
+					RoleID:    mockUserRole,
+					Namespace: "baz",
+				},
+			}}
+		claims := generateClaims(t, userData)
+
+		permissionResources := make(map[string]string)
+		permissionResources["{namespace}"] = userData.Namespace
+		validationResult, _ := testClient.ValidatePermission(claims, requiredPermission, permissionResources)
+
+		assert.Equal(t, testCase.expectedResult, validationResult,
+			"resource string %s validation on roles does not match", requiredPermission.Resource)
+	}
+}
+
+func Test_DefaultClientValidatePermission_ResourceStringOnRole_HaveInvalidRole(t *testing.T) {
+	type testTable struct {
+		requiredResource string
+		expectedResult   bool
+	}
+
+	testCases := []testTable{
+		{requiredResource: "NAMESPACE:foo:USER:888:FRIENDS", expectedResult: false},
+		{requiredResource: "NAMESPACE:baz:USER:888:FRIENDS", expectedResult: false},
+		{requiredResource: "NAMESPACE:baz:USER:999:FRIENDS", expectedResult: false},
+		{requiredResource: "NAMESPACE:foo:USER:888:FRIENDS", expectedResult: false},
+		{requiredResource: "NAMESPACE:*:USER:*:SLOTDATA", expectedResult: false},
+	}
+
+	for _, testCase := range testCases {
+		requiredPermission := Permission{
+			Resource: testCase.requiredResource,
+			Action:   ActionCreate | ActionRead | ActionUpdate,
+		}
+
+		userData := &tokenUserData{UserID: "888", Namespace: "bar",
+			Roles: []string{defaultUserRole}, NamespaceRoles: []NamespaceRole{
+				{
+					RoleID:    defaultUserRole,
+					Namespace: "foo",
+				},
+				{
+					RoleID:    defaultUserRole,
+					Namespace: "baz",
+				},
+			}}
 		claims := generateClaims(t, userData)
 
 		permissionResources := make(map[string]string)
@@ -958,11 +1040,12 @@ func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
 	tNow := time.Now().UTC()
 
 	return &JWTClaims{
-		DisplayName:  userData.DisplayName,
-		Namespace:    userData.Namespace,
-		Roles:        userData.Roles,
-		Permissions:  userData.Permissions,
-		JusticeFlags: userData.JusticeFlags,
+		DisplayName:    userData.DisplayName,
+		Namespace:      userData.Namespace,
+		Roles:          userData.Roles,
+		NamespaceRoles: userData.NamespaceRoles,
+		Permissions:    userData.Permissions,
+		JusticeFlags:   userData.JusticeFlags,
 		Claims: jwt.Claims{
 			Subject:  userData.UserID,
 			IssuedAt: jwt.NewNumericDate(tNow),

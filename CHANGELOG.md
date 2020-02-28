@@ -1,3 +1,8 @@
+Release v1.1.5 (2020-02-26)
+===========================
+### Changed
+1. Change permission checking (ValidatePermission) with allowed namespace / namespace roles field
+
 Release v1.1.4 (2020-02-20)
 ===========================
 ### Fixed

@@ -47,12 +47,12 @@ func (client *DefaultClient) permissionAllowed(grantedPermissions []Permission, 
 }
 
 func (client *DefaultClient) applyUserPermissionResourceValues(
-	grantedPermissions []Permission, claims *JWTClaims) []Permission {
+	grantedPermissions []Permission, claims *JWTClaims, namespace string) []Permission {
 	for i := range grantedPermissions {
 		grantedPermissions[i].Resource = strings.Replace(
 			grantedPermissions[i].Resource, "{userId}", claims.Subject, -1)
 		grantedPermissions[i].Resource = strings.Replace(
-			grantedPermissions[i].Resource, "{namespace}", claims.Namespace, -1)
+			grantedPermissions[i].Resource, "{namespace}", namespace, -1)
 	}
 
 	return grantedPermissions
@@ -106,7 +106,8 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 
 	if cachedRolePermission, found := client.rolePermissionCache.Get(roleID); found {
 		var rolePermissions = make([]Permission, len(cachedRolePermission.([]Permission)))
-		copy(rolePermissions, cachedRolePermission.([]Permission))
+		_ = copy(rolePermissions, cachedRolePermission.([]Permission))
+
 		return rolePermissions, nil
 	}
 
@@ -187,7 +188,7 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 	}
 
 	var rolePermissions = make([]Permission, len(role.Permissions))
-	copy(rolePermissions, role.Permissions)
+	_ = copy(rolePermissions, role.Permissions)
 
 	client.rolePermissionCache.Set(roleID, role.Permissions, cache.DefaultExpiration)
 
