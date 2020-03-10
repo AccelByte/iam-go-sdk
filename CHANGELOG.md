@@ -1,5 +1,8 @@
 Release v1.1.6 (2020-03-10)
 ===========================
+### Fixed
+1. Fix wrapping error with nil value
+
 ### Changed
 1. Support backward compatibility for permission checking with `roles` field
 
