@@ -501,7 +501,7 @@ func Test_DefaultClientValidatePermission(t *testing.T) {
 	}
 }
 
-func Test_DefaultClientValidatePermission_ResourceStringOnRole_HaveValidRole(t *testing.T) {
+func Test_DefaultClientValidatePermission_ResourceStringOnRole_ValidNamespaceRole(t *testing.T) {
 	type testTable struct {
 		requiredResource string
 		expectedResult   bool
@@ -531,7 +531,7 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_HaveValidRole(t *
 		}
 
 		userData := &tokenUserData{UserID: "888", Namespace: "bar",
-			Roles: []string{defaultUserRole}, NamespaceRoles: []NamespaceRole{
+			NamespaceRoles: []NamespaceRole{
 				{
 					RoleID:    defaultUserRole,
 					Namespace: "foo",
@@ -556,7 +556,7 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_HaveValidRole(t *
 	}
 }
 
-func Test_DefaultClientValidatePermission_ResourceStringOnRole_HaveInvalidRole(t *testing.T) {
+func Test_DefaultClientValidatePermission_ResourceStringOnRole_InvalidNamespaceRole(t *testing.T) {
 	type testTable struct {
 		requiredResource string
 		expectedResult   bool
@@ -577,7 +577,7 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_HaveInvalidRole(t
 		}
 
 		userData := &tokenUserData{UserID: "888", Namespace: "bar",
-			Roles: []string{defaultUserRole}, NamespaceRoles: []NamespaceRole{
+			NamespaceRoles: []NamespaceRole{
 				{
 					RoleID:    defaultUserRole,
 					Namespace: "foo",
@@ -587,6 +587,47 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_HaveInvalidRole(t
 					Namespace: "baz",
 				},
 			}}
+		claims := generateClaims(t, userData)
+
+		permissionResources := make(map[string]string)
+		permissionResources["{namespace}"] = userData.Namespace
+		validationResult, _ := testClient.ValidatePermission(claims, requiredPermission, permissionResources)
+
+		assert.Equal(t, testCase.expectedResult, validationResult,
+			"resource string %s validation on roles does not match", requiredPermission.Resource)
+
+		// test tracing
+		validationResult, _ = testClient.ValidatePermission(
+			claims,
+			requiredPermission,
+			permissionResources,
+			WithJaegerContext(context.Background()),
+		)
+		assert.Equal(t, testCase.expectedResult, validationResult,
+			"resource string %s validation on roles does not match", requiredPermission.Resource)
+	}
+}
+
+func Test_DefaultClientValidatePermission_ResourceStringOnRoles(t *testing.T) {
+	type testTable struct {
+		requiredResource string
+		expectedResult   bool
+	}
+
+	testCases := []testTable{
+		{requiredResource: "NAMESPACE:foo:USER:888:ORDER", expectedResult: true},
+		{requiredResource: "NAMESPACE:bar:USER:888:ORDER", expectedResult: false},
+		{requiredResource: "NAMESPACE:foo:USER:888:ORDER", expectedResult: true},
+		{requiredResource: "NAMESPACE:foo:USER:999:ORDER", expectedResult: false},
+	}
+
+	for _, testCase := range testCases {
+		requiredPermission := Permission{
+			Resource: testCase.requiredResource,
+			Action:   ActionCreate | ActionRead | ActionUpdate,
+		}
+
+		userData := &tokenUserData{UserID: "888", Namespace: "foo", Roles: []string{defaultUserRole}}
 		claims := generateClaims(t, userData)
 
 		permissionResources := make(map[string]string)
