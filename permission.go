@@ -99,7 +99,7 @@ func (client *DefaultClient) actionAllowed(grantedAction int, requiredAction int
 	return grantedAction&requiredAction == requiredAction
 }
 
-// nolint: funlen
+// nolint: funlen, dupl
 func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentracing.Span) ([]Permission, error) {
 	span := jaeger.StartChildSpan(rootSpan, "client.getRolePermission")
 	defer jaeger.Finish(span)
@@ -143,7 +143,7 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
-					return e
+					return errors.Errorf("getRolePermission: endpoint returned status code : %v", responseStatusCode)
 				}
 
 				responseBodyBytes, e = ioutil.ReadAll(resp.Body)

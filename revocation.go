@@ -92,7 +92,7 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
-					return e
+					return errors.Errorf("getRevocationList: endpoint returned status code : %v", responseStatusCode)
 				}
 
 				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
@@ -113,7 +113,8 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 
 	if responseStatusCode != http.StatusOK {
 		jaeger.TraceError(span, errors.Wrap(err, "getRevocationList: endpoint returned non-OK"))
-		return errors.Wrap(err, "getRevocationList: endpoint returned non-OK")
+		return errors.Errorf("getRevocationList: unable to get revocation list: error code : %d, error message : %s",
+			responseStatusCode, string(responseBodyBytes))
 	}
 
 	var revocationList *RevocationList

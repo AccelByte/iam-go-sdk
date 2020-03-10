@@ -114,7 +114,7 @@ func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
-					return e
+					return errors.Errorf("getJWKS: endpoint returned status code : %v", responseStatusCode)
 				}
 
 				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
@@ -135,7 +135,8 @@ func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
 
 	if responseStatusCode != http.StatusOK {
 		jaeger.TraceError(span, errors.Wrap(err, "getJWKS: endpoint returned non-OK"))
-		return errors.Wrap(err, "getJWKS: endpoint returned non-OK")
+		return errors.Errorf("getJWKS: unable to get JWKS: error code : %d, error message : %s",
+			responseStatusCode, string(responseBodyBytes))
 	}
 
 	var jwks Keys

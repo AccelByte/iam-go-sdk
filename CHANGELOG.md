@@ -1,3 +1,8 @@
+Release v1.1.6 (2020-03-10)
+===========================
+### Fixed
+1. Fix wrapping error with nil value
+
 Release v1.1.5 (2020-02-26)
 ===========================
 ### Changed

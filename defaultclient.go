@@ -662,7 +662,7 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
-					return e
+					return errors.Errorf("getClientInformation: endpoint returned status code : %v", responseStatusCode)
 				}
 
 				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
