@@ -47,12 +47,16 @@ func (client *DefaultClient) permissionAllowed(grantedPermissions []Permission, 
 }
 
 func (client *DefaultClient) applyUserPermissionResourceValues(
-	grantedPermissions []Permission, claims *JWTClaims, namespace string) []Permission {
+	grantedPermissions []Permission, claims *JWTClaims, allowedNamespace string) []Permission {
+	if allowedNamespace == "" {
+		allowedNamespace = claims.Namespace
+	}
+
 	for i := range grantedPermissions {
 		grantedPermissions[i].Resource = strings.Replace(
 			grantedPermissions[i].Resource, "{userId}", claims.Subject, -1)
 		grantedPermissions[i].Resource = strings.Replace(
-			grantedPermissions[i].Resource, "{namespace}", namespace, -1)
+			grantedPermissions[i].Resource, "{namespace}", allowedNamespace, -1)
 	}
 
 	return grantedPermissions
