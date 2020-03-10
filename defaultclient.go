@@ -382,6 +382,53 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 		}
 	}
 
+	// will remove permissions checking using roles once namespace role has fully used
+	for _, roleID := range claims.Roles {
+		grantedRolePermissions := make([]Permission, 0)
+		err := backoff.
+			Retry(
+				func() error {
+					var e error
+
+					reqSpan := jaeger.StartChildSpan(span, "client.ValidatePermission.Retry")
+					defer jaeger.Finish(reqSpan)
+
+					grantedRolePermissions, e = client.getRolePermission(roleID, span)
+					if e != nil {
+						switch errors.Cause(e) {
+						case errRoleNotFound:
+							return nil
+						case errUnauthorized:
+							client.refreshAccessToken(reqSpan)
+							return e
+						}
+
+						return backoff.Permanent(e)
+					}
+
+					return nil
+				},
+				b,
+			)
+
+		if err != nil {
+			err = logAndReturnErr(
+				errors.WithMessage(err,
+					"ValidatePermission: unable to get role perms"))
+			jaeger.TraceError(span, err)
+
+			return false, err
+		}
+
+		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims, "")
+		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
+			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
+			log("ValidatePermission: permission allowed to access resource")
+
+			return true, nil
+		}
+	}
+
 	jaeger.AddLog(span, "msg", "ValidatePermission: permission not allowed to access resource")
 	log("ValidatePermission: permission not allowed to access resource")
 

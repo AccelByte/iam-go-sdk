@@ -1,3 +1,8 @@
+Release v1.1.6 (2020-03-10)
+===========================
+### Changed
+1. Support backward compatibility for permission checking with `roles` field
+
 Release v1.1.5 (2020-02-26)
 ===========================
 ### Changed
