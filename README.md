@@ -170,3 +170,4 @@ validationResult, err := testClient.ValidatePermission(
     WithJaegerContext(context.Background()),
 )
 ``` 
+
