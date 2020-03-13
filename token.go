@@ -71,7 +71,7 @@ func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan op
 
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
-					jaeger.TraceError(reqSpan, e)
+					jaeger.TraceError(reqSpan, errors.Errorf("validateAccessToken: endpoint returned status code : %v", responseStatusCode))
 					return errors.Errorf("validateAccessToken: endpoint returned status code : %v", responseStatusCode)
 				}
 
@@ -248,7 +248,8 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 	}
 
 	if responseStatusCode != http.StatusOK {
-		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: endpoint returned non-OK"))
+		jaeger.TraceError(span, errors.Errorf("clientTokenGrant: unable to grant client token: error code : %d, error message : %s",
+			responseStatusCode, string(responseBodyBytes)))
 		return 0, errors.Errorf("clientTokenGrant: unable to grant client token: error code : %d, error message : %s",
 			responseStatusCode, string(responseBodyBytes))
 	}
