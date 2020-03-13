@@ -3,12 +3,8 @@ github.com/AccelByte/bloom v0.0.0-20180915202807-98c052463922 h1:3v15CkYPdxShj9t
 github.com/AccelByte/bloom v0.0.0-20180915202807-98c052463922/go.mod h1:njjI8ZR5oAhtMq8ODchl6GBz8enKQJt+D9WqLn96hLI=
 github.com/AccelByte/go-jose v2.1.4+incompatible h1:jn3BJ0HZAUskWJ042CJGgFXDAwhTsEkOKCX0DIZ5OcQ=
 github.com/AccelByte/go-jose v2.1.4+incompatible/go.mod h1:X9vkgMrcPILJ7qhUruCaKHnslOhBTTpsC5DjiFpmmSc=
-github.com/AccelByte/go-restful-plugins v1.0.0 h1:NnXM88vXSZ/j5sZ5QBaZUJ7HpBkdDaUjbq1OlUfZ550=
-github.com/AccelByte/go-restful-plugins/v3 v3.1.2 h1:1SjNrnfxBXl10HxehME/w1ngyjz/OAAR1aNv5Pp+O1Q=
-github.com/AccelByte/go-restful-plugins/v3 v3.1.2/go.mod h1:mNADSWMpAVuRYx3216nBAmM5SpaUwSdPlurgmzl01hw=
-github.com/AccelByte/go-restful-plugins/v3 v3.1.3 h1:BFpJfq899pxjFTF7nyemkQnw2g/ozfJF/jAVXCvJGIk=
-github.com/AccelByte/go-restful-plugins/v3 v3.2.0 h1:ASt42WKM7uI27BRpLbCh8ycIQn0aDYXXr5UTVKMFU4Q=
-github.com/AccelByte/go-restful-plugins/v3 v3.2.0/go.mod h1:XkhxnbfR/0z5lj2xI2SVbSuF5PhCi39xVYmVODwFf7k=
+github.com/AccelByte/go-restful-plugins/v3 v3.2.1 h1:My/jP+wxJM+0adg1vJBja11/+tMc26KB3n+RaGuMkuo=
+github.com/AccelByte/go-restful-plugins/v3 v3.2.1/go.mod h1:XkhxnbfR/0z5lj2xI2SVbSuF5PhCi39xVYmVODwFf7k=
 github.com/AccelByte/iam-go-sdk v1.1.2/go.mod h1:M1Eplqpph/Msxm7XKgZRI+cYBCCChFdgPiVdKYupwq8=
 github.com/AccelByte/public-source-ip v1.0.0/go.mod h1:L7zIgt3UaXkGH7NoKFCbxPdWZOVwn+d6uW/5yYRXtnQ=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
