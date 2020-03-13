@@ -112,7 +112,15 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 	}
 
 	if responseStatusCode != http.StatusOK {
-		jaeger.TraceError(span, errors.Wrap(err, "getRevocationList: endpoint returned non-OK"))
+		jaeger.TraceError(
+			span,
+			errors.Errorf(
+				"getRevocationList: unable to get revocation list: error code : %d, error message : %s",
+				responseStatusCode,
+				string(responseBodyBytes),
+			),
+		)
+
 		return errors.Errorf("getRevocationList: unable to get revocation list: error code : %d, error message : %s",
 			responseStatusCode, string(responseBodyBytes))
 	}
