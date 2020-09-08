@@ -451,6 +451,21 @@ func Test_DefaultClientValidatePermission(t *testing.T) {
 		{
 			requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
 			grantedResource:  "NAMESPACE:foo:USER:*",
+			expectedResult:   false,
+		},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
+			grantedResource:  "NAMESPACE:foo:USER:*:*",
+			expectedResult:   true,
+		},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
+			grantedResource:  "*",
+			expectedResult:   true,
+		},
+		{
+			requiredResource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
+			grantedResource:  "NAMESPACE:foo:*",
 			expectedResult:   true,
 		},
 		{
