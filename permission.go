@@ -30,6 +30,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	resourceNamespace = "NAMESPACE"
+	resourceUser      = "USER"
+)
+
 func (client *DefaultClient) permissionAllowed(grantedPermissions []Permission, requiredPermission Permission) bool {
 	for _, grantedPermission := range grantedPermissions {
 		grantedAction := grantedPermission.Action
@@ -87,7 +92,20 @@ func (client *DefaultClient) resourceAllowed(accessPermissionResource string, re
 	}
 
 	if accessPermResSectionLen < requiredPermResSectionLen {
-		return accessPermResSections[accessPermResSectionLen-1] == "*"
+		if accessPermResSections[accessPermResSectionLen-1] == "*" {
+			if accessPermResSectionLen < 2 {
+				return true
+			}
+
+			segment := accessPermResSections[accessPermResSectionLen-2]
+			if segment == resourceNamespace || segment == resourceUser {
+				return false
+			}
+
+			return true
+		}
+
+		return false
 	}
 
 	for i := requiredPermResSectionLen; i < accessPermResSectionLen; i++ {

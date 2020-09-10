@@ -1,3 +1,10 @@
+Release v1.2.0 (2020-09-08)
+===========================
+### Changed
+1. When the granted permission ends with wildcard, check if the wildcard
+   only applies to matches any namspace and user, or the wildcard should
+   match any resources after the namespace and user
+
 Release v1.1.6 (2020-03-10)
 ===========================
 ### Fixed
