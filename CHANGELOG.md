@@ -1,22 +1,42 @@
-Release v1.2.0 (2020-09-08)
+Release v1.4.0 (2020-09-10)
 ===========================
 ### Changed
 1. When the granted permission ends with wildcard, check if the wildcard
    only applies to matches any namspace and user, or the wildcard should
    match any resources after the namespace and user
 
-Release v1.1.6 (2020-03-10)
+### Fixed
+1. Sync changelog file with github release version
+
+Release v1.3.4 (2020-03-13)
+===========================
+### Fixed
+1. Fix null pointer dereference
+
+Release v1.3.3 (2020-03-11)
+===========================
+### Fixed
+1. Upgrade dependencies and remove cached library
+
+Release v1.3.2 (2020-03-10)
 ===========================
 ### Fixed
 1. Fix wrapping error with nil value
 
+Release v1.3.1 (2020-03-10)
+===========================
 ### Changed
 1. Support backward compatibility for permission checking with `roles` field
 
-Release v1.1.5 (2020-02-26)
+Release v1.3.0 (2020-03-02)
 ===========================
 ### Changed
 1. Change permission checking (ValidatePermission) with allowed namespace / namespace roles field
+
+Release v1.2.0 (2020-02-27)
+===========================
+### Added
+1. Implement jaeger tracing
 
 Release v1.1.4 (2020-02-20)
 ===========================
@@ -45,6 +65,11 @@ Release v1.1.0 (2019-07-28)
 ### Added
 1. No checking if no `aud` field found in the token.
 2. Write unit tests for making sure `ValidateAudience` works as expected.
+
+Release v1.0.7 (2019-07-26)
+===========================
+### Fixed
+1. Fix audience validation in mock client
 
 Release v1.0.6 (2019-07-25)
 ===========================
