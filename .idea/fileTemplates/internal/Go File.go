@@ -1,4 +1,4 @@
-// Copyright 2019 AccelByte Inc
+// Copyright ${YEAR} AccelByte Inc
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,35 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package iam
-
-import "fmt"
-
-func log(s ...interface{}) {
-	if !debug.Load() {
-		return
-	}
-
-	fmt.Print("[IAM-Go-SDK] ")
-	fmt.Println(s...)
-}
-
-func logErr(err error, s ...interface{}) {
-	if !debug.Load() {
-		return
-	}
-
-	if err == nil {
-		return
-	}
-
-	fmt.Print("[IAM-Go-SDK] ")
-	fmt.Println(s...)
-	fmt.Printf("%+v\n", err)
-}
-
-// nolint: unparam
-func logAndReturnErr(err error, s ...interface{}) error {
-	logErr(err, s...)
-	return err
-}
+package ${GO_PACKAGE_NAME}

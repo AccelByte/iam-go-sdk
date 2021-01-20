@@ -1,18 +1,16 @@
-/*
- * Copyright 2018 AccelByte Inc
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2018 AccelByte Inc
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package iam
 
@@ -58,10 +56,10 @@ func (client *DefaultClient) applyUserPermissionResourceValues(
 	}
 
 	for i := range grantedPermissions {
-		grantedPermissions[i].Resource = strings.Replace(
-			grantedPermissions[i].Resource, "{userId}", claims.Subject, -1)
-		grantedPermissions[i].Resource = strings.Replace(
-			grantedPermissions[i].Resource, "{namespace}", allowedNamespace, -1)
+		grantedPermissions[i].Resource = strings.ReplaceAll(
+			grantedPermissions[i].Resource, "{userId}", claims.Subject)
+		grantedPermissions[i].Resource = strings.ReplaceAll(
+			grantedPermissions[i].Resource, "{namespace}", allowedNamespace)
 	}
 
 	return grantedPermissions
@@ -127,7 +125,7 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 	defer jaeger.Finish(span)
 
 	if cachedRolePermission, found := client.rolePermissionCache.Get(roleID); found {
-		var rolePermissions = make([]Permission, len(cachedRolePermission.([]Permission)))
+		rolePermissions := make([]Permission, len(cachedRolePermission.([]Permission)))
 		_ = copy(rolePermissions, cachedRolePermission.([]Permission))
 
 		return rolePermissions, nil
@@ -139,7 +137,7 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 	}
 
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken)
+	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken.Load())
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
@@ -209,7 +207,7 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 		return nil, errors.Wrap(err, "getRolePermission: unable to unmarshal response body")
 	}
 
-	var rolePermissions = make([]Permission, len(role.Permissions))
+	rolePermissions := make([]Permission, len(role.Permissions))
 	_ = copy(rolePermissions, role.Permissions)
 
 	client.rolePermissionCache.Set(roleID, role.Permissions, cache.DefaultExpiration)

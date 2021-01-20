@@ -1,18 +1,16 @@
-/*
- * Copyright 2018 AccelByte Inc
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2018 AccelByte Inc
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package iam
 
@@ -23,6 +21,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AccelByte/bloom"
@@ -31,6 +30,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
 )
 
 // JFlags constants
@@ -72,17 +72,23 @@ type Config struct {
 
 // DefaultClient define oauth client config
 type DefaultClient struct {
-	keys                       map[string]*rsa.PublicKey
-	clientAccessToken          string
-	config                     *Config
-	rolePermissionCache        *cache.Cache
-	revocationFilter           *bloom.Filter
-	revokedUsers               map[string]time.Time
-	tokenRefreshActive         bool
+	keys      map[string]*rsa.PublicKey
+	keysMutex sync.RWMutex
+
+	clientAccessToken     atomic.String
+	config                *Config
+	rolePermissionCache   *cache.Cache
+	revocationFilter      *bloom.Filter
+	revocationFilterMutex sync.RWMutex
+
+	revokedUsers      map[string]time.Time
+	revokedUsersMutex sync.RWMutex
+
+	tokenRefreshActive         atomic.Bool
 	localValidationActive      bool
 	jwksRefreshError           error
 	revocationListRefreshError error
-	tokenRefreshError          error
+	tokenRefreshError          atomic.Error
 	remoteTokenValidation      func(accessToken string, span opentracing.Span) (bool, error)
 	baseURICache               *cache.Cache
 	// for easily mocking the HTTP call
@@ -95,10 +101,10 @@ type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-var debug bool
+var debug atomic.Bool
 
 // NewDefaultClient creates new IAM DefaultClient
-func NewDefaultClient(config *Config) Client {
+func NewDefaultClient(config *Config) *DefaultClient {
 	if config.RolesCacheExpirationTime <= 0 {
 		config.RolesCacheExpirationTime = defaultRoleCacheTime
 	}
@@ -121,15 +127,61 @@ func NewDefaultClient(config *Config) Client {
 			baseURICacheExpiration,
 			baseURICacheExpiration,
 		),
-		httpClient: &http.Client{},
+		keys:         make(map[string]*rsa.PublicKey),
+		revokedUsers: make(map[string]time.Time),
+		httpClient:   &http.Client{},
 	}
 	client.remoteTokenValidation = client.validateAccessToken
 
-	debug = config.Debug
+	debug.Store(config.Debug)
 
 	log("NewDefaultClient: debug enabled")
 
 	return client
+}
+
+func (client *DefaultClient) setKeysSafe(values map[string]*rsa.PublicKey) {
+	client.keysMutex.Lock()
+	defer client.keysMutex.Unlock()
+
+	client.keys = values
+}
+
+func (client *DefaultClient) setKeySafe(key string, value *rsa.PublicKey) {
+	client.keysMutex.Lock()
+	defer client.keysMutex.Unlock()
+
+	client.keys[key] = value
+}
+
+func (client *DefaultClient) getKeySafe(key string) (value *rsa.PublicKey, exists bool) {
+	client.keysMutex.RLock()
+	defer client.keysMutex.RUnlock()
+
+	value, ok := client.keys[key]
+	return value, ok
+}
+
+func (client *DefaultClient) setRevokedUsersSafe(values map[string]time.Time) {
+	client.revokedUsersMutex.Lock()
+	defer client.revokedUsersMutex.Unlock()
+
+	client.revokedUsers = values
+}
+
+func (client *DefaultClient) setRevokedUserSafe(key string, value time.Time) {
+	client.revokedUsersMutex.Lock()
+	defer client.revokedUsersMutex.Unlock()
+
+	client.revokedUsers[key] = value
+}
+
+func (client *DefaultClient) getRevokedUserSafe(key string) (value time.Time, exists bool) {
+	client.revokedUsersMutex.RLock()
+	defer client.revokedUsersMutex.RUnlock()
+
+	value, ok := client.revokedUsers[key]
+	return value, ok
 }
 
 // ClientTokenGrant starts client token grant to get client bearer token for role caching
@@ -149,7 +201,7 @@ func (client *DefaultClient) ClientTokenGrant(opts ...Option) error {
 	}
 
 	go func() {
-		client.tokenRefreshActive = true
+		client.tokenRefreshActive.Store(true)
 
 		time.Sleep(refreshInterval)
 		client.refreshAccessToken(span)
@@ -167,7 +219,7 @@ func (client *DefaultClient) ClientToken(opts ...Option) string {
 
 	defer jaeger.Finish(span)
 
-	return client.clientAccessToken
+	return client.clientAccessToken.Load()
 }
 
 // StartLocalValidation starts goroutines to refresh JWK and revocation list periodically
@@ -335,6 +387,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 	b.MaxElapsedTime = maxBackOffTime
 
 	for _, namespaceRole := range claims.NamespaceRoles {
+		namespaceRole := namespaceRole
 		grantedRolePermissions := make([]Permission, 0)
 
 		err := backoff.
@@ -362,7 +415,6 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 				},
 				b,
 			)
-
 		if err != nil {
 			err = logAndReturnErr(
 				errors.WithMessage(err,
@@ -384,6 +436,8 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 
 	// will remove permissions checking using roles once namespace role has fully used
 	for _, roleID := range claims.Roles {
+		roleID := roleID
+
 		grantedRolePermissions := make([]Permission, 0)
 		err := backoff.
 			Retry(
@@ -410,7 +464,6 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 				},
 				b,
 			)
-
 		if err != nil {
 			err = logAndReturnErr(
 				errors.WithMessage(err,
@@ -534,9 +587,13 @@ func (client *DefaultClient) HealthCheck(opts ...Option) bool {
 		return false
 	}
 
-	if client.tokenRefreshActive && client.tokenRefreshError != nil {
-		logErr(client.tokenRefreshError,
-			"HealthCheck: error in token refresh")
+	isTokenRefreshActive := client.tokenRefreshActive.Load()
+	tokenRefreshError := client.tokenRefreshError.Load()
+	if isTokenRefreshActive && tokenRefreshError != nil {
+		logErr(
+			tokenRefreshError,
+			"HealthCheck: error in token refresh",
+		)
 		return false
 	}
 
@@ -574,27 +631,25 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims, opts ...Option)
 		b := backoff.NewExponentialBackOff()
 		b.MaxElapsedTime = maxBackOffTime
 
-		err := backoff.
-			Retry(
-				func() error {
-					reqSpan := jaeger.StartChildSpan(span, "client.ValidateAudience.Retry")
-					defer jaeger.Finish(reqSpan)
+		err := backoff.Retry(
+			func() error {
+				reqSpan := jaeger.StartChildSpan(span, "client.ValidateAudience.Retry")
+				defer jaeger.Finish(reqSpan)
 
-					e := client.getClientInformation(getClientInformationURL)
-					if e != nil {
-						if errors.Cause(e) == errUnauthorized {
-							client.refreshAccessToken(reqSpan)
-							return e
-						}
-
-						return backoff.Permanent(e)
+				e := client.getClientInformation(getClientInformationURL)
+				if e != nil {
+					if errors.Cause(e) == errUnauthorized {
+						client.refreshAccessToken(reqSpan)
+						return e
 					}
 
-					return nil
-				},
-				b,
-			)
+					return backoff.Permanent(e)
+				}
 
+				return nil
+			},
+			b,
+		)
 		if err != nil {
 			jaeger.TraceError(span, errors.WithMessage(err, "ValidateAudience: get client detail returns error"))
 
@@ -637,7 +692,7 @@ func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string, o
 
 	scopes := strings.Split(claims.Scope, scopeSeparator)
 
-	var isValid = false
+	isValid := false
 
 	for _, scope := range scopes {
 		if reqScope == scope {
@@ -680,7 +735,7 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 	}
 
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken)
+	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken.Load())
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
