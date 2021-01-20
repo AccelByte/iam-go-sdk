@@ -1,6 +1,6 @@
 module github.com/AccelByte/iam-go-sdk
 
-go 1.12
+go 1.13
 
 require (
 	github.com/AccelByte/bloom v0.0.0-20180915202807-98c052463922
@@ -14,4 +14,5 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.4.1
 	github.com/stretchr/testify v1.4.0
+	go.uber.org/atomic v1.5.1
 )

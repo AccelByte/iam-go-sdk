@@ -1,18 +1,16 @@
-/*
- * Copyright 2018 AccelByte Inc
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2018 AccelByte Inc
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package iam
 
@@ -149,23 +147,25 @@ func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
 		return errors.Wrap(err, "getJWKS: unable to unmarshal response body")
 	}
 
-	client.keys = make(map[string]*rsa.PublicKey)
+	client.setKeysSafe(make(map[string]*rsa.PublicKey))
 
-	for _, jwk := range jwks.Keys {
-		key, errGenerate := generatePublicKey(&jwk)
+	for i := range jwks.Keys {
+		jwk := &jwks.Keys[i]
+
+		key, errGenerate := generatePublicKey(jwk)
 		if errGenerate != nil {
 			jaeger.TraceError(span, errors.WithMessage(errGenerate, "getJWKS: unable to generate public key"))
 			return errors.WithMessage(err, "getJWKS: unable to generate public key")
 		}
 
-		client.keys[jwk.Kid] = key
+		client.setKeySafe(jwk.Kid, key)
 	}
 
 	return nil
 }
 
 func (client *DefaultClient) getPublicKey(keyID string) (*rsa.PublicKey, error) {
-	key, ok := client.keys[keyID]
+	key, ok := client.getKeySafe(keyID)
 	if !ok {
 		return nil, errors.New("getPublicKey: public key doesn't exist")
 	}

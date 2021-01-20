@@ -1,18 +1,16 @@
-/*
- * Copyright 2018 AccelByte Inc
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2018 AccelByte Inc
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package iam
 
@@ -86,32 +84,35 @@ type tokenUserData struct {
 	JusticeFlags   int `json:"jflgs"`
 }
 
-var testClient *DefaultClient
-var privateKey *rsa.PrivateKey
-var signer jose.Signer
+var (
+	testClient *DefaultClient
+	privateKey *rsa.PrivateKey
+	signer     jose.Signer
+)
 
 func init() {
 	jaeger.InitGlobalTracer(jaegerAgentHost, "", "test", "")
 
 	privateKey = mustUnmarshalRSA(testJWTPrivateKey)
-	testClient = &DefaultClient{
-		config:                &Config{},
-		keys:                  make(map[string]*rsa.PublicKey),
-		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
-		revocationFilter:      bloom.New(100),
-		revokedUsers:          make(map[string]time.Time),
-		localValidationActive: true,
-		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
-	}
+	testClient = NewDefaultClient(&Config{})
+
+	testClient.keys = make(map[string]*rsa.PublicKey)
+	testClient.rolePermissionCache = cache.New(cache.DefaultExpiration, cache.DefaultExpiration)
+	testClient.revocationFilter = bloom.New(100)
+	testClient.revokedUsers = make(map[string]time.Time)
+	testClient.localValidationActive = true
+	testClient.baseURICache = cache.New(cache.DefaultExpiration, cache.DefaultExpiration)
 
 	var err error
 
-	signer, err = jose.NewSigner(jose.SigningKey{
-		Algorithm: jose.RS256,
-		Key: jose.JSONWebKey{
-			KeyID: keyID,
-			Key:   privateKey,
-		}},
+	signer, err = jose.NewSigner(
+		jose.SigningKey{
+			Algorithm: jose.RS256,
+			Key: jose.JSONWebKey{
+				KeyID: keyID,
+				Key:   privateKey,
+			},
+		},
 		(&jose.SignerOptions{}).WithType("JWT"))
 	if err != nil {
 		panic(err)
@@ -180,10 +181,11 @@ func mustUnmarshalRSA(data string) *rsa.PrivateKey {
 }
 
 func Test_NewDefaultClient(t *testing.T) {
-	conf := &Config{}
-	c := NewDefaultClient(conf)
+	t.Parallel()
 
-	defaultClient := c.(*DefaultClient)
+	conf := &Config{}
+
+	defaultClient := NewDefaultClient(conf)
 
 	assert.Equal(t, defaultRoleCacheTime, defaultClient.config.RolesCacheExpirationTime)
 	assert.Equal(t, defaultJWKSRefreshInterval, defaultClient.config.JWKSRefreshInterval)
@@ -191,6 +193,8 @@ func Test_NewDefaultClient(t *testing.T) {
 }
 
 func Test_GetClientToken(t *testing.T) {
+	t.Parallel()
+
 	mockAccessToken := "mockAccessToken"
 
 	mockHTTPClient := &httpClientMock{
@@ -213,8 +217,7 @@ func Test_GetClientToken(t *testing.T) {
 	}
 
 	conf := &Config{}
-	c := NewDefaultClient(conf)
-	defaultClient := c.(*DefaultClient)
+	defaultClient := NewDefaultClient(conf)
 	defaultClient.httpClient = mockHTTPClient
 
 	err := defaultClient.ClientTokenGrant()
@@ -232,6 +235,8 @@ func Test_GetClientToken(t *testing.T) {
 }
 
 func Test_StartLocalValidation(t *testing.T) {
+	t.Parallel()
+
 	mockHTTPClient := &httpClientMock{
 		doMock: func(req *http.Request) (*http.Response, error) {
 			resp := struct {
@@ -253,8 +258,7 @@ func Test_StartLocalValidation(t *testing.T) {
 	}
 
 	conf := &Config{}
-	c := NewDefaultClient(conf)
-	defaultClient := c.(*DefaultClient)
+	defaultClient := NewDefaultClient(conf)
 	defaultClient.httpClient = mockHTTPClient
 
 	err := defaultClient.StartLocalValidation()
@@ -270,6 +274,8 @@ func Test_StartLocalValidation(t *testing.T) {
 
 // nolint: dupl
 func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
+	t.Parallel()
+
 	type testTable struct {
 		justiceFlag              int
 		expectedValidationResult bool
@@ -301,6 +307,8 @@ func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
 
 // nolint: dupl
 func Test_DefaultClientUserPhoneVerificationStatus(t *testing.T) {
+	t.Parallel()
+
 	type testTable struct {
 		justiceFlag              int
 		expectedValidationResult bool
@@ -333,6 +341,8 @@ func Test_DefaultClientUserPhoneVerificationStatus(t *testing.T) {
 
 // nolint: dupl
 func Test_DefaultClientUserAnonymousStatus(t *testing.T) {
+	t.Parallel()
+
 	type testTable struct {
 		justiceFlag              int
 		expectedValidationResult bool
@@ -366,12 +376,16 @@ func Test_DefaultClientUserAnonymousStatus(t *testing.T) {
 }
 
 func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
+	t.Parallel()
+
 	grantedPermission := Permission{
 		Resource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
 		Action:   ActionCreate | ActionRead | ActionUpdate | ActionDelete,
 	}
-	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a",
-		Permissions: []Permission{grantedPermission}}
+	userData := &tokenUserData{
+		UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Permissions: []Permission{grantedPermission},
+	}
 
 	claims := generateClaims(t, userData)
 
@@ -395,12 +409,16 @@ func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
 }
 
 func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
+	t.Parallel()
+
 	grantedPermission := Permission{
 		Resource: "NAMESPACE:foo:USER:888:PROFILE:birthday",
 		Action:   ActionCreate | ActionRead | ActionUpdate | ActionDelete,
 	}
-	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a",
-		Permissions: []Permission{grantedPermission}}
+	userData := &tokenUserData{
+		UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Permissions: []Permission{grantedPermission},
+	}
 
 	claims := generateClaims(t, userData)
 	claims.Expiry = jwt.NewNumericDate(time.Now().UTC().Add(-time.Minute))
@@ -426,6 +444,8 @@ func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
 
 // nolint: funlen
 func Test_DefaultClientValidatePermission(t *testing.T) {
+	t.Parallel()
+
 	type testTable struct {
 		requiredResource string
 		grantedResource  string
@@ -495,8 +515,10 @@ func Test_DefaultClientValidatePermission(t *testing.T) {
 			Action:   ActionCreate | ActionRead | ActionUpdate | ActionDelete,
 		}
 
-		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a",
-			Permissions: []Permission{grantedPermission}}
+		userData := &tokenUserData{
+			UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
+			Permissions: []Permission{grantedPermission},
+		}
 		claims := generateClaims(t, userData)
 
 		permissionResources := make(map[string]string)
@@ -517,6 +539,8 @@ func Test_DefaultClientValidatePermission(t *testing.T) {
 }
 
 func Test_DefaultClientValidatePermission_ResourceStringOnRole_ValidNamespaceRole(t *testing.T) {
+	t.Parallel()
+
 	type testTable struct {
 		requiredResource string
 		expectedResult   bool
@@ -545,7 +569,9 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_ValidNamespaceRol
 			Action:   ActionCreate | ActionRead | ActionUpdate,
 		}
 
-		userData := &tokenUserData{UserID: "888", Namespace: "bar",
+		userData := &tokenUserData{
+			UserID:    "888",
+			Namespace: "bar",
 			NamespaceRoles: []NamespaceRole{
 				{
 					RoleID:    defaultUserRole,
@@ -559,7 +585,8 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_ValidNamespaceRol
 					RoleID:    mockUserRole,
 					Namespace: "baz",
 				},
-			}}
+			},
+		}
 		claims := generateClaims(t, userData)
 
 		permissionResources := make(map[string]string)
@@ -572,6 +599,8 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_ValidNamespaceRol
 }
 
 func Test_DefaultClientValidatePermission_ResourceStringOnRole_InvalidNamespaceRole(t *testing.T) {
+	t.Parallel()
+
 	type testTable struct {
 		requiredResource string
 		expectedResult   bool
@@ -591,7 +620,9 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_InvalidNamespaceR
 			Action:   ActionCreate | ActionRead | ActionUpdate,
 		}
 
-		userData := &tokenUserData{UserID: "888", Namespace: "bar",
+		userData := &tokenUserData{
+			UserID:    "888",
+			Namespace: "bar",
 			NamespaceRoles: []NamespaceRole{
 				{
 					RoleID:    defaultUserRole,
@@ -601,7 +632,8 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_InvalidNamespaceR
 					RoleID:    defaultUserRole,
 					Namespace: "baz",
 				},
-			}}
+			},
+		}
 		claims := generateClaims(t, userData)
 
 		permissionResources := make(map[string]string)
@@ -624,6 +656,8 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_InvalidNamespaceR
 }
 
 func Test_DefaultClientValidatePermission_ResourceStringOnRoles(t *testing.T) {
+	t.Parallel()
+
 	type testTable struct {
 		requiredResource string
 		expectedResult   bool
@@ -666,6 +700,8 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRoles(t *testing.T) {
 
 // nolint: funlen
 func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
+	t.Parallel()
+
 	type testTable struct {
 		requiredAction int
 		grantedAction  int
@@ -720,8 +756,10 @@ func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
 			Action:   testCase.requiredAction,
 		}
 
-		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a",
-			Permissions: []Permission{grantedPermission}}
+		userData := &tokenUserData{
+			UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
+			Permissions: []Permission{grantedPermission},
+		}
 		claims := generateClaims(t, userData)
 
 		permissionResources := make(map[string]string)
@@ -742,6 +780,8 @@ func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
 }
 
 func Test_DefaultClientValidateRoleID(t *testing.T) {
+	t.Parallel()
+
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
 
@@ -755,6 +795,8 @@ func Test_DefaultClientValidateRoleID(t *testing.T) {
 }
 
 func Test_DefaultClientValidateRoleID_NotExist(t *testing.T) {
+	t.Parallel()
+
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
 
@@ -772,6 +814,8 @@ func Test_DefaultClientValidateRoleID_NotExist(t *testing.T) {
 }
 
 func Test_DefaultClientValidateAccessToken(t *testing.T) {
+	t.Parallel()
+
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Namespace: "foo"}
 	claims := generateClaims(t, userData)
 
@@ -790,6 +834,8 @@ func Test_DefaultClientValidateAccessToken(t *testing.T) {
 }
 
 func Test_DefaultClientValidateAccessToken_InvalidToken(t *testing.T) {
+	t.Parallel()
+
 	validationResult, err := testClient.ValidateAccessToken(invalid)
 	if err != nil {
 		t.Fatalf("unable to validate : %v", err)
@@ -807,11 +853,15 @@ func Test_DefaultClientValidateAccessToken_InvalidToken(t *testing.T) {
 }
 
 func Test_DefaultClientValidateAndParseClaims_RevokedUser(t *testing.T) {
-	userData := &tokenUserData{UserID: "e71d22e2b270449c90d4c15b89c3f994",
+	t.Parallel()
+
+	userData := &tokenUserData{
+		UserID:       "e71d22e2b270449c90d4c15b89c3f994",
 		Namespace:    "foo",
 		Permissions:  []Permission{{Resource: "RESOURCE", Action: ActionCreate | ActionRead | ActionUpdate | ActionDelete}},
 		Roles:        []string{"roleID"},
-		JusticeFlags: 7}
+		JusticeFlags: 7,
+	}
 	claims := generateClaims(t, userData)
 
 	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
@@ -819,7 +869,7 @@ func Test_DefaultClientValidateAndParseClaims_RevokedUser(t *testing.T) {
 		panic(err)
 	}
 
-	testClient.revokedUsers["e71d22e2b270449c90d4c15b89c3f994"] = time.Now().UTC()
+	testClient.setRevokedUserSafe("e71d22e2b270449c90d4c15b89c3f994", time.Now().UTC())
 
 	claims, err = testClient.ValidateAndParseClaims(accessToken)
 
@@ -835,11 +885,15 @@ func Test_DefaultClientValidateAndParseClaims_RevokedUser(t *testing.T) {
 }
 
 func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
-	userData := &tokenUserData{UserID: "257abbea27b24247daae0702c8a200a1",
+	t.Parallel()
+
+	userData := &tokenUserData{
+		UserID:       "257abbea27b24247daae0702c8a200a1",
 		Namespace:    "foo",
 		Permissions:  []Permission{{Resource: "RESOURCE", Action: ActionCreate | ActionRead | ActionUpdate | ActionDelete}},
 		Roles:        []string{"roleID"},
-		JusticeFlags: 7}
+		JusticeFlags: 7,
+	}
 	claims := generateClaims(t, userData)
 
 	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
@@ -847,7 +901,7 @@ func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
 		panic(err)
 	}
 
-	testClient.revocationFilter.Put(bytes.NewBufferString(accessToken).Bytes())
+	testClient.putRevocationFilterSafe(bytes.NewBufferString(accessToken).Bytes())
 
 	claims, err = testClient.ValidateAndParseClaims(accessToken)
 
@@ -863,6 +917,8 @@ func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
 }
 
 func Test_DefaultClientHasBan(t *testing.T) {
+	t.Parallel()
+
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
 	claims.Bans = append(claims.Bans, JWTBan{Ban: "TEST_BAN"})
@@ -879,6 +935,8 @@ func Test_DefaultClientHasBan(t *testing.T) {
 
 // nolint: dupl
 func Test_ValidateAudience(t *testing.T) {
+	t.Parallel()
+
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
 	claims.Audience = append(claims.Audience, "http://example.net")
@@ -926,6 +984,8 @@ func Test_ValidateAudience(t *testing.T) {
 
 // nolint: dupl
 func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
+	t.Parallel()
+
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
 	claims.Audience = append(claims.Audience, "http://testexample.net")
@@ -973,8 +1033,13 @@ func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
 
 // nolint: dupl
 func Test_ValidateAudience_ClientNotFound(t *testing.T) {
-	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole},
-		Namespace: "accelbyte"}
+	t.Parallel()
+
+	userData := &tokenUserData{
+		UserID:    "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Roles:     []string{defaultUserRole},
+		Namespace: "accelbyte",
+	}
 	claims := generateClaims(t, userData)
 	claims.Audience = append(claims.Audience, "http://example.net")
 
@@ -1013,8 +1078,13 @@ func Test_ValidateAudience_ClientNotFound(t *testing.T) {
 
 // nolint: dupl
 func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
-	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole},
-		Namespace: "accelbyte"}
+	t.Parallel()
+
+	userData := &tokenUserData{
+		UserID:    "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Roles:     []string{defaultUserRole},
+		Namespace: "accelbyte",
+	}
 	claims := generateClaims(t, userData)
 	mockHTTPClient := &httpClientMock{
 		doMock: func(req *http.Request) (*http.Response, error) {
@@ -1060,6 +1130,8 @@ func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
 // nolint: dupl
 // To prevent accidentally passing an empty claim.
 func Test_ValidateAudience_ClaimsIsNil(t *testing.T) {
+	t.Parallel()
+
 	mockClient := &DefaultClient{
 		config:                &Config{ClientID: "a952b5c054de468bab9e0b4802057f11"},
 		keys:                  make(map[string]*rsa.PublicKey),
@@ -1077,6 +1149,8 @@ func Test_ValidateAudience_ClaimsIsNil(t *testing.T) {
 }
 
 func Test_ValidateScope(t *testing.T) {
+	t.Parallel()
+
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
 	claims.Scope = "mockscope otherscope"
@@ -1117,8 +1191,4 @@ type httpClientMock struct {
 
 func (c *httpClientMock) Do(req *http.Request) (*http.Response, error) {
 	return c.doMock(req)
-}
-
-func Test_Sleep(t *testing.T) {
-	time.Sleep(time.Second * 5)
 }
