@@ -716,6 +716,51 @@ func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string, o
 	return nil
 }
 
+// GetRolePermissions gets permissions of a role
+func (client *DefaultClient) GetRolePermissions(roleID string, opts ...Option) (perms []Permission, err error) {
+	options := processOptions(opts)
+	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.GetRolePermission")
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+
+	err = backoff.
+		Retry(
+			func() error {
+				var e error
+
+				reqSpan := jaeger.StartChildSpan(span, "client.GetRolePermission.Retry")
+				defer jaeger.Finish(reqSpan)
+
+				perms, e = client.getRolePermission(roleID, span)
+				if e != nil {
+					switch errors.Cause(e) {
+					case errRoleNotFound:
+						return nil
+					case errUnauthorized:
+						client.refreshAccessToken(reqSpan)
+						return e
+					}
+
+					return backoff.Permanent(e)
+				}
+
+				return nil
+			},
+			b,
+		)
+	if err != nil {
+		err = logAndReturnErr(
+			errors.WithMessage(err,
+				"GetRolePermissions: unable to get role perms"))
+		jaeger.TraceError(span, err)
+
+		return []Permission{}, err
+	}
+
+	return perms, err
+}
+
 // getClientInformation get client base URI
 // need client access token for authorization
 // nolint: funlen

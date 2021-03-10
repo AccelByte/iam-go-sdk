@@ -164,3 +164,21 @@ func (client *MockClient) ValidateScope(claims *JWTClaims, scope string, opts ..
 
 	return nil
 }
+
+// GetRolePermissions gets permissions of a role
+func (client *MockClient) GetRolePermissions(roleID string, opts ...Option) (perms []Permission, err error) {
+	switch roleID {
+	case "":
+		return []Permission{}, errRoleNotFound
+
+	case MockForbidden:
+		return []Permission{}, nil
+	}
+
+	return []Permission{
+		{
+			Resource: "NAMESPACE:{namespace}:USER:{userId}:ORDER:{orderId}",
+			Action:   ActionCreate | ActionRead | ActionUpdate,
+		},
+	}, nil
+}

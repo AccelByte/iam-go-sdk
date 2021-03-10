@@ -1,3 +1,8 @@
+Release v1.5.0 (2021-03-10)
+===========================
+### Added
+1. Expose GetRolePermission method as interface
+
 Release v1.4.0 (2020-09-10)
 ===========================
 ### Changed

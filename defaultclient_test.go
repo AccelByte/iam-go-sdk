@@ -1164,6 +1164,47 @@ func Test_ValidateScope(t *testing.T) {
 	assert.NoError(t, err, "validate scope should be successful")
 }
 
+func Test_GetRolePermissions(t *testing.T) {
+	t.Parallel()
+
+	type testTable struct {
+		roleID         string
+		expectedResult []Permission
+	}
+
+	testCases := []testTable{
+		{
+			roleID: defaultUserRole,
+			expectedResult: []Permission{
+				{
+					Resource: "NAMESPACE:{namespace}:USER:{userId}:ORDER",
+					Action:   ActionCreate | ActionRead | ActionUpdate,
+				},
+			},
+		},
+		{
+			roleID: mockUserRole,
+			expectedResult: []Permission{
+				{
+					Resource: "NAMESPACE:*:USER:{userId}:FRIENDS",
+					Action:   ActionCreate | ActionRead | ActionUpdate,
+				},
+				{
+					Resource: "NAMESPACE:*:USER:*:SLOTDATA",
+					Action:   ActionCreate | ActionRead | ActionUpdate,
+				},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		getRoleResult, err := testClient.GetRolePermissions(testCase.roleID)
+
+		assert.NoError(t, err)
+		assert.Equal(t, testCase.expectedResult, getRoleResult)
+	}
+}
+
 func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
 	t.Helper()
 
