@@ -87,6 +87,9 @@ type Client interface {
 
 	// ValidateScope validate scope of user access token
 	ValidateScope(claims *JWTClaims, scope string, opts ...Option) error
+
+	// GetRolePermissions gets permissions of a role
+	GetRolePermissions(roleID string, opts ...Option) (perms []Permission, err error)
 }
 
 type Options struct {
