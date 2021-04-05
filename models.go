@@ -33,20 +33,22 @@ const (
 // TokenResponse is the data structure for the response on successful
 // token request.
 type TokenResponse struct {
-	AccessToken    string          `json:"access_token"`
-	RefreshToken   string          `json:"refresh_token"`
-	ExpiresIn      int             `json:"expires_in"`
-	TokenType      string          `json:"token_type"`
-	Roles          []string        `json:"roles"`
-	NamespaceRoles []NamespaceRole `json:"namespace_roles"`
-	Permissions    []Permission    `json:"permissions"`
-	Bans           []JWTBan        `json:"bans"`
-	UserID         string          `json:"user_id"`
-	PlatformID     string          `json:"platform_id,omitempty"`
-	PlatformUserID string          `json:"platform_user_id,omitempty"`
-	JusticeFlags   int             `json:"jflgs,omitempty"`
-	DisplayName    string          `json:"display_name"`
-	Namespace      string          `json:"namespace"`
+	AccessToken           string          `json:"access_token"`
+	RefreshToken          string          `json:"refresh_token"`
+	ExpiresIn             int             `json:"expires_in"`
+	TokenType             string          `json:"token_type"`
+	Roles                 []string        `json:"roles"`
+	AcceptedPolicyVersion []string        `json:"accepted_policy_version"`
+	NamespaceRoles        []NamespaceRole `json:"namespace_roles"`
+	Permissions           []Permission    `json:"permissions"`
+	Bans                  []JWTBan        `json:"bans"`
+	UserID                string          `json:"user_id"`
+	PlatformID            string          `json:"platform_id,omitempty"`
+	PlatformUserID        string          `json:"platform_user_id,omitempty"`
+	JusticeFlags          int             `json:"jflgs,omitempty"`
+	DisplayName           string          `json:"display_name"`
+	Namespace             string          `json:"namespace"`
+	IsComply              bool            `json:"is_comply"`
 }
 
 // Permission holds information about the actions can be performed to the resource.
@@ -134,16 +136,18 @@ type NamespaceRole struct {
 
 // JWTClaims holds data stored in a JWT access token with additional Justice Flags field
 type JWTClaims struct {
-	Namespace      string          `json:"namespace"`
-	DisplayName    string          `json:"display_name"`
-	Roles          []string        `json:"roles"`
-	NamespaceRoles []NamespaceRole `json:"namespace_roles"`
-	Permissions    []Permission    `json:"permissions"`
-	Bans           []JWTBan        `json:"bans"`
-	JusticeFlags   int             `json:"jflgs"`
-	Scope          string          `json:"scope"`
-	Country        string          `json:"country"`
-	ClientID       string          `json:"client_id"`
+	Namespace             string          `json:"namespace"`
+	DisplayName           string          `json:"display_name"`
+	Roles                 []string        `json:"roles"`
+	AcceptedPolicyVersion []string        `json:"accepted_policy_version"`
+	NamespaceRoles        []NamespaceRole `json:"namespace_roles"`
+	Permissions           []Permission    `json:"permissions"`
+	Bans                  []JWTBan        `json:"bans"`
+	JusticeFlags          int             `json:"jflgs"`
+	Scope                 string          `json:"scope"`
+	Country               string          `json:"country"`
+	ClientID              string          `json:"client_id"`
+	IsComply              bool            `json:"is_comply"`
 	jwt.Claims
 }
 
