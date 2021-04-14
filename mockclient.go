@@ -15,6 +15,8 @@
 package iam
 
 import (
+	"fmt"
+
 	"github.com/AccelByte/go-jose/jwt"
 )
 
@@ -23,6 +25,7 @@ const (
 	MockUnauthorized = "unauthorized"
 	MockForbidden    = "forbidden"
 	MockAudience     = "http://example.com"
+	MockSecret       = "mocksecret"
 )
 
 // MockClient define mock oauth client config
@@ -68,6 +71,15 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Opt
 	claims := &JWTClaims{
 		Claims:    jwt.Claims{Subject: accessToken},
 		Namespace: "MOCK",
+	}
+
+	// extract mock access token
+	jwe, err := jwt.ParseSigned(accessToken)
+	if err == nil {
+		err = jwe.Claims([]byte(MockSecret), &claims)
+		if err != nil {
+			log(fmt.Sprintf("unable to claim mock access token. error: %v", err))
+		}
 	}
 
 	claims.Audience = append(claims.Audience, MockAudience)
