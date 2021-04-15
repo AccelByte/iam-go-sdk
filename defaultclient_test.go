@@ -78,6 +78,7 @@ type tokenUserData struct {
 	DisplayName    string
 	PlatformID     string
 	PlatformUserID string
+	ClientID       string
 	Roles          []string
 	NamespaceRoles []NamespaceRole `json:"namespace_roles"`
 	Permissions    []Permission
@@ -1217,6 +1218,7 @@ func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
 		NamespaceRoles: userData.NamespaceRoles,
 		Permissions:    userData.Permissions,
 		JusticeFlags:   userData.JusticeFlags,
+		ClientID:       userData.ClientID,
 		Claims: jwt.Claims{
 			Subject:  userData.UserID,
 			IssuedAt: jwt.NewNumericDate(tNow),
