@@ -175,3 +175,11 @@ type JWTBan struct {
 	Ban     string    `json:"Ban"`
 	EndDate time.Time `json:"EndDate"`
 }
+
+// ClientInformation holds client information
+type ClientInformation struct {
+	ClientName  string `json:"clientName"`
+	Namespace   string `json:"namespace"`
+	RedirectURI string `json:"redirectUri"`
+	BaseURI     string `json:"baseUri"`
+}

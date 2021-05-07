@@ -54,9 +54,8 @@ const (
 	defaultJWKSRefreshInterval           = 60 * time.Second
 	defaultRevocationListRefreshInterval = 60 * time.Second
 
-	baseURIKey             = "baseURI"
-	baseURICacheExpiration = 1 * time.Minute
-	scopeSeparator         = " "
+	clientInfoExpiration = 1 * time.Minute
+	scopeSeparator       = " "
 )
 
 // Config contains IAM configurations
@@ -90,7 +89,7 @@ type DefaultClient struct {
 	revocationListRefreshError error
 	tokenRefreshError          atomic.Error
 	remoteTokenValidation      func(accessToken string, span opentracing.Span) (bool, error)
-	baseURICache               *cache.Cache
+	clientInfoCache            *cache.Cache
 	// for easily mocking the HTTP call
 	httpClient HTTPClient
 }
@@ -123,9 +122,9 @@ func NewDefaultClient(config *Config) *DefaultClient {
 			config.RolesCacheExpirationTime,
 			2*config.RolesCacheExpirationTime,
 		),
-		baseURICache: cache.New(
-			baseURICacheExpiration,
-			baseURICacheExpiration,
+		clientInfoCache: cache.New(
+			clientInfoExpiration,
+			clientInfoExpiration,
 		),
 		keys:         make(map[string]*rsa.PublicKey),
 		revokedUsers: make(map[string]time.Time),
@@ -204,7 +203,7 @@ func (client *DefaultClient) ClientTokenGrant(opts ...Option) error {
 		client.tokenRefreshActive.Store(true)
 
 		time.Sleep(refreshInterval)
-		client.refreshAccessToken(span)
+		client.spawnRefreshAccessTokenScheduler(span)
 	}()
 
 	log("ClientTokenGrant: token grant success")
@@ -284,7 +283,7 @@ func (client *DefaultClient) ValidateAccessToken(accessToken string, opts ...Opt
 				isValid, e = client.remoteTokenValidation(accessToken, reqSpan)
 				if e != nil {
 					if errors.Cause(e) == errUnauthorized {
-						client.refreshAccessToken(reqSpan)
+						_, _ = client.refreshAccessToken(reqSpan)
 						return e
 					}
 
@@ -404,7 +403,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 						case errRoleNotFound:
 							return nil
 						case errUnauthorized:
-							client.refreshAccessToken(reqSpan)
+							_, _ = client.refreshAccessToken(reqSpan)
 							return e
 						}
 
@@ -453,7 +452,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 						case errRoleNotFound:
 							return nil
 						case errUnauthorized:
-							client.refreshAccessToken(reqSpan)
+							_, _ = client.refreshAccessToken(reqSpan)
 							return e
 						}
 
@@ -623,48 +622,19 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims, opts ...Option)
 		return nil
 	}
 
-	baseURI, found := client.baseURICache.Get(baseURIKey)
-	if !found {
-		path := fmt.Sprintf(clientInformationPath, claims.Namespace, client.config.ClientID)
-		getClientInformationURL := client.config.BaseURL + path
+	clientInfo, err := client.GetClientInformation(claims.Namespace, client.config.ClientID)
+	if err != nil {
+		jaeger.TraceError(span, errors.WithMessage(err, "ValidateAudience: get client detail returns error"))
 
-		b := backoff.NewExponentialBackOff()
-		b.MaxElapsedTime = maxBackOffTime
-
-		err := backoff.Retry(
-			func() error {
-				reqSpan := jaeger.StartChildSpan(span, "client.ValidateAudience.Retry")
-				defer jaeger.Finish(reqSpan)
-
-				e := client.getClientInformation(getClientInformationURL)
-				if e != nil {
-					if errors.Cause(e) == errUnauthorized {
-						client.refreshAccessToken(reqSpan)
-						return e
-					}
-
-					return backoff.Permanent(e)
-				}
-
-				return nil
-			},
-			b,
-		)
-		if err != nil {
-			jaeger.TraceError(span, errors.WithMessage(err, "ValidateAudience: get client detail returns error"))
-
-			return logAndReturnErr(
-				errors.WithMessage(err,
-					"ValidateAudience: get client detail returns error"))
-		}
-
-		baseURI, _ = client.baseURICache.Get(baseURIKey)
+		return logAndReturnErr(
+			errors.WithMessage(err,
+				"ValidateAudience: get client detail returns error"))
 	}
 
 	isAllowed := false
 
 	for _, reqAud := range claims.Audience {
-		if reqAud == baseURI {
+		if reqAud == clientInfo.BaseURI {
 			isAllowed = true
 			break
 		}
@@ -738,7 +708,7 @@ func (client *DefaultClient) GetRolePermissions(roleID string, opts ...Option) (
 					case errRoleNotFound:
 						return nil
 					case errUnauthorized:
-						client.refreshAccessToken(reqSpan)
+						_, _ = client.refreshAccessToken(reqSpan)
 						return e
 					}
 
@@ -761,26 +731,41 @@ func (client *DefaultClient) GetRolePermissions(roleID string, opts ...Option) (
 	return perms, err
 }
 
-// getClientInformation get client base URI
-// need client access token for authorization
-// nolint: funlen
-func (client *DefaultClient) getClientInformation(getClientInformationURL string, opts ...Option) (err error) {
+// GetClientInformation gets IAM client information,
+// it will look into cache first, if not found then fetch it to IAM.
+func (client *DefaultClient) GetClientInformation(namespace string, clientID string, opts ...Option) (*ClientInformation, error) {
 	options := processOptions(opts)
-	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
+	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.GetClientInformation")
 
 	defer jaeger.Finish(span)
 
-	clientInformation := struct {
-		BaseURI string `json:"baseUri"`
-	}{}
+	cachedClientInfo, found := client.clientInfoCache.Get(clientID)
+	if found {
+		return cachedClientInfo.(*ClientInformation), nil
+	}
 
+	clientInfo, err := client.fetchClientInformation(namespace, clientID)
+	if err != nil {
+		return nil, err
+	}
+	client.clientInfoCache.Set(clientID, clientInfo, cache.DefaultExpiration)
+	return clientInfo, nil
+}
+
+// fetchClientInformation fetch client information to IAM
+func (client *DefaultClient) fetchClientInformation(namespace string, clientID string, opts ...Option) (clientInfo *ClientInformation, err error) {
+	options := processOptions(opts)
+	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.getClientInformation")
+
+	defer jaeger.Finish(span)
+
+	getClientInformationURL := client.config.BaseURL + fmt.Sprintf(clientInformationPath, namespace, clientID)
 	req, err := http.NewRequest(http.MethodGet, getClientInformationURL, nil)
 	if err != nil {
-		return errors.Wrap(err, "getClientInformation: unable to create new HTTP request")
+		return nil, errors.Wrap(err, "getClientInformation: unable to create new HTTP request")
 	}
 
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken.Load())
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
@@ -794,6 +779,8 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 		Retry(
 			func() error {
 				var e error
+
+				req.Header.Set("Authorization", "Bearer "+client.clientAccessToken.Load())
 
 				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
 				defer jaeger.Finish(reqSpan)
@@ -810,6 +797,14 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 				if resp.StatusCode >= http.StatusInternalServerError {
 					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return errors.Errorf("getClientInformation: endpoint returned status code : %v", responseStatusCode)
+				} else if resp.StatusCode == http.StatusUnauthorized {
+					jaeger.TraceError(span, errors.Wrap(errUnauthorized, "getClientInformation: unauthorized"))
+
+					// refresh the client accessToken
+					log("fetchClientInformation: refresh client token")
+					_, _ = client.refreshAccessToken(reqSpan)
+
+					return errors.Wrap(errUnauthorized, "getClientInformation: unauthorized")
 				}
 
 				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
@@ -825,12 +820,7 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 
 	if err != nil {
 		jaeger.TraceError(span, errors.Wrap(err, "getClientInformation: unable to do HTTP request"))
-		return errors.Wrap(err, "getClientInformation: unable to do HTTP request")
-	}
-
-	if responseStatusCode == http.StatusUnauthorized {
-		jaeger.TraceError(span, errors.Wrap(errUnauthorized, "getClientInformation: unauthorized"))
-		return errors.Wrap(errUnauthorized, "getClientInformation: unauthorized")
+		return nil, errors.Wrap(err, "getClientInformation: unable to do HTTP request")
 	}
 
 	if responseStatusCode != http.StatusOK {
@@ -839,17 +829,16 @@ func (client *DefaultClient) getClientInformation(getClientInformationURL string
 				"getClientInformation: unable to get client information: error code : %d, error message : %s",
 				responseStatusCode, string(responseBodyBytes)))
 
-		return errors.Errorf("getClientInformation: unable to get client information: error code : %d, error message : %s",
+		return nil, errors.Errorf("getClientInformation: unable to get client information: error code : %d, error message : %s",
 			responseStatusCode, string(responseBodyBytes))
 	}
 
+	var clientInformation ClientInformation
 	err = json.Unmarshal(responseBodyBytes, &clientInformation)
 	if err != nil {
 		jaeger.TraceError(span, errors.Wrap(err, "getClientInformation: unable to unmarshal response body"))
-		return errors.Wrap(err, "getClientInformation: unable to unmarshal response body")
+		return nil, errors.Wrap(err, "getClientInformation: unable to unmarshal response body")
 	}
 
-	client.baseURICache.Set(baseURIKey, clientInformation.BaseURI, cache.DefaultExpiration)
-
-	return nil
+	return &clientInformation, nil
 }
