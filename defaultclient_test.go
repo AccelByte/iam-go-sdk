@@ -1,4 +1,4 @@
-// Copyright 2018 AccelByte Inc
+// Copyright 2018-2021 AccelByte Inc
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import (
 	jose "github.com/AccelByte/go-jose"
 	"github.com/AccelByte/go-jose/jwt"
 	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
+	"github.com/google/uuid"
 	"github.com/opentracing/opentracing-go"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
@@ -102,7 +103,7 @@ func init() {
 	testClient.revocationFilter = bloom.New(100)
 	testClient.revokedUsers = make(map[string]time.Time)
 	testClient.localValidationActive = true
-	testClient.baseURICache = cache.New(cache.DefaultExpiration, cache.DefaultExpiration)
+	testClient.clientInfoCache = cache.New(cache.DefaultExpiration, cache.DefaultExpiration)
 
 	var err error
 
@@ -942,8 +943,12 @@ func Test_ValidateAudience(t *testing.T) {
 	claims := generateClaims(t, userData)
 	claims.Audience = append(claims.Audience, "http://example.net")
 
+	httpRequestTriggerCount := 0
+
 	mockHTTPClient := &httpClientMock{
 		doMock: func(req *http.Request) (*http.Response, error) {
+			httpRequestTriggerCount++
+
 			r := ioutil.NopCloser(strings.NewReader(`
 {
    "clientID": "5a2cf6407d6349c7a75264c2c1d04a10",
@@ -974,13 +979,20 @@ func Test_ValidateAudience(t *testing.T) {
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
 		localValidationActive: true,
-		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            mockHTTPClient,
 	}
 
+	// 1st test
 	err := mockClient.ValidateAudience(claims)
-
 	assert.Nil(t, err)
+	assert.Equal(t, 1, httpRequestTriggerCount)
+
+	// 2nd test
+	// in this run, the Client is got from cache
+	err = mockClient.ValidateAudience(claims)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, httpRequestTriggerCount) // http request should only called once
 }
 
 // nolint: dupl
@@ -1023,7 +1035,7 @@ func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
 		localValidationActive: true,
-		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            mockHTTPClient,
 	}
 
@@ -1068,7 +1080,7 @@ func Test_ValidateAudience_ClientNotFound(t *testing.T) {
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
 		localValidationActive: true,
-		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            mockHTTPClient,
 	}
 
@@ -1119,7 +1131,7 @@ func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
 		localValidationActive: true,
-		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            mockHTTPClient,
 	}
 
@@ -1140,7 +1152,7 @@ func Test_ValidateAudience_ClaimsIsNil(t *testing.T) {
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
 		localValidationActive: true,
-		baseURICache:          cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            &http.Client{},
 	}
 
@@ -1206,6 +1218,192 @@ func Test_GetRolePermissions(t *testing.T) {
 	}
 }
 
+func Test_GetClientInformation(t *testing.T) {
+	t.Parallel()
+
+	httpRequestTriggerCount := 0
+
+	// mock http request
+	clientID := generateUUID()
+	mockHTTPClient := &httpClientMock{
+		doMock: func(req *http.Request) (*http.Response, error) {
+			httpRequestTriggerCount++
+
+			r := ioutil.NopCloser(strings.NewReader(`
+{
+   "clientID": "` + clientID + `",
+   "clientName": "test client",
+   "namespace": "accelbyte",
+   "redirectUri": "http://127.0.0.1",
+   "oauthClientType": "Confidential",
+   "audiences": null,
+   "baseUri": "http://example.net",
+   "createdAt": "2019-07-27T07:39:31.541500915Z",
+   "modifiedAt": "0001-01-01T00:00:00Z",
+   "scopes": null
+}
+`))
+			return &http.Response{
+				Status:     http.StatusText(http.StatusOK),
+				StatusCode: http.StatusOK,
+				Body:       r,
+				Header:     http.Header{},
+			}, nil
+		},
+	}
+	mockClient := &DefaultClient{
+		config:          &Config{ClientID: generateUUID()},
+		clientInfoCache: cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		httpClient:      mockHTTPClient,
+	}
+
+	expectedClientInfo := &ClientInformation{
+		ClientName:  "test client",
+		Namespace:   "accelbyte",
+		RedirectURI: "http://127.0.0.1",
+		BaseURI:     "http://example.net",
+	}
+
+	// 1st test
+	clientInfo1, err := mockClient.GetClientInformation("accelbyte", clientID)
+
+	assert.NoError(t, err)
+	assert.Equal(t, expectedClientInfo, clientInfo1)
+	assert.Equal(t, 1, httpRequestTriggerCount)
+
+	// 2nd test
+	// in this run, the Client is got from cache
+	clientInfo2, err := mockClient.GetClientInformation("accelbyte", clientID)
+
+	assert.NoError(t, err)
+	assert.Equal(t, expectedClientInfo, clientInfo2)
+	assert.Equal(t, 1, httpRequestTriggerCount) // http request should only called once
+}
+
+func Test_GetClientInformation_ClientNotFound(t *testing.T) {
+	t.Parallel()
+
+	// mock http request
+	clientID := generateUUID()
+	mockHTTPClient := &httpClientMock{
+		doMock: func(req *http.Request) (*http.Response, error) {
+			r := ioutil.NopCloser(strings.NewReader(`
+{
+  "errorCode": 10365,
+  "errorMessage": "client with id ` + clientID + ` in namespace accelbyte was not found"
+}
+`))
+			return &http.Response{
+				Status:     http.StatusText(http.StatusNotFound),
+				StatusCode: http.StatusNotFound,
+				Body:       r,
+				Header:     http.Header{},
+			}, nil
+		},
+	}
+	mockClient := &DefaultClient{
+		config:          &Config{ClientID: generateUUID()},
+		clientInfoCache: cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		httpClient:      mockHTTPClient,
+	}
+
+	// test
+	clientInfo, err := mockClient.GetClientInformation("accelbyte", clientID)
+
+	assert.Error(t, err)
+	assert.Nil(t, clientInfo)
+}
+
+func Test_GetClientInformation_UnauthorizedThenPerformRefreshClientToken(t *testing.T) {
+	t.Parallel()
+
+	// mock http request
+	refreshTokenFlag := false
+	clientID := generateUUID()
+
+	mockHTTPClient := &httpClientMock{
+		doMock: func(req *http.Request) (*http.Response, error) {
+			isRefreshTokenRequest := strings.Contains(req.URL.Path, "/oauth/token")
+			if isRefreshTokenRequest {
+				refreshTokenFlag = true
+
+				r := ioutil.NopCloser(strings.NewReader(`
+{
+    "access_token": "dummy_valid_token",
+    "bans": null,
+    "display_name": "",
+    "expires_in": 3600,
+    "namespace": "accelbyte",
+    "permissions": [],
+    "token_type": "Bearer"
+}
+`))
+				return &http.Response{
+					Status:     http.StatusText(http.StatusOK),
+					StatusCode: http.StatusOK,
+					Body:       r,
+					Header:     http.Header{},
+				}, nil
+			}
+
+			// assume the client token is invalid, so need to refresh token first
+			if !refreshTokenFlag {
+				r := ioutil.NopCloser(strings.NewReader(`
+{
+  "errorCode": 20001,
+  "errorMessage": "unauthorized access"
+}
+`))
+				return &http.Response{
+					Status:     http.StatusText(http.StatusUnauthorized),
+					StatusCode: http.StatusUnauthorized,
+					Body:       r,
+					Header:     http.Header{},
+				}, nil
+			}
+
+			r := ioutil.NopCloser(strings.NewReader(`
+{
+   "clientID": "` + clientID + `",
+   "clientName": "test client",
+   "namespace": "accelbyte",
+   "redirectUri": "http://127.0.0.1",
+   "oauthClientType": "Confidential",
+   "audiences": null,
+   "baseUri": "http://example.net",
+   "createdAt": "2019-07-27T07:39:31.541500915Z",
+   "modifiedAt": "0001-01-01T00:00:00Z",
+   "scopes": null
+}
+`))
+			return &http.Response{
+				Status:     http.StatusText(http.StatusOK),
+				StatusCode: http.StatusOK,
+				Body:       r,
+				Header:     http.Header{},
+			}, nil
+		},
+	}
+	mockClient := &DefaultClient{
+		config:          &Config{ClientID: generateUUID()},
+		clientInfoCache: cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		httpClient:      mockHTTPClient,
+	}
+
+	expectedClientInfo := &ClientInformation{
+		ClientName:  "test client",
+		Namespace:   "accelbyte",
+		RedirectURI: "http://127.0.0.1",
+		BaseURI:     "http://example.net",
+	}
+
+	// test
+	clientInfo, err := mockClient.GetClientInformation("accelbyte", clientID)
+
+	assert.NoError(t, err)
+	assert.Equal(t, expectedClientInfo, clientInfo)
+}
+
 func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
 	t.Helper()
 
@@ -1225,6 +1423,11 @@ func generateClaims(t *testing.T, userData *tokenUserData) *JWTClaims {
 			Expiry:   jwt.NewNumericDate(tNow.Add(15 * time.Minute)),
 		},
 	}
+}
+
+func generateUUID() string {
+	id, _ := uuid.NewRandom()
+	return strings.ReplaceAll(id.String(), "-", "")
 }
 
 type httpClientMock struct {

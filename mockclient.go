@@ -194,3 +194,14 @@ func (client *MockClient) GetRolePermissions(roleID string, opts ...Option) (per
 		},
 	}, nil
 }
+
+// GetClientInformation gets IAM client information
+func (client *MockClient) GetClientInformation(namespace string, clientID string, opts ...Option) (clientInfo *ClientInformation, err error) {
+	clientInfo = &ClientInformation{
+		"client-1",
+		namespace,
+		"http://127.0.0.1",
+		"http://127.0.0.1",
+	}
+	return clientInfo, nil
+}

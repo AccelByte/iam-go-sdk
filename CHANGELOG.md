@@ -1,3 +1,11 @@
+Release v1.7.0 (2021-05-11)
+===========================
+### Added
+1. Expose GetClientInformation method as interface
+
+### Fixed
+1. refreshAccessToken that blocking the request
+
 Release v1.5.0 (2021-03-10)
 ===========================
 ### Added

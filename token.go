@@ -152,7 +152,7 @@ func (client *DefaultClient) userRevoked(userID string, issuedAt int64) bool {
 	return revokedAt.Unix() >= issuedAt
 }
 
-func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) {
+func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) (time.Duration, error) {
 	span := jaeger.StartChildSpan(rootSpan, "client.refreshAccessToken")
 	defer jaeger.Finish(span)
 
@@ -161,27 +161,39 @@ func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) {
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = maxBackOffTime
 
+	err := backoff.Retry(
+		func() error {
+			var e error
+
+			reqSpan := jaeger.StartChildSpan(span, "client.refreshAccessToken.Retry")
+			defer jaeger.Finish(reqSpan)
+
+			tokenRefreshInterval, e = client.clientTokenGrant(reqSpan)
+			if e != nil {
+				jaeger.TraceError(reqSpan, e)
+				return e
+			}
+
+			return nil
+		},
+		b,
+	)
+	if err != nil {
+		jaeger.AddLog(span, "msg", "refreshAccessToken: client token refreshed")
+		log("refreshAccessToken: client token refreshed")
+	}
+
+	client.tokenRefreshError.Store(err)
+
+	return tokenRefreshInterval, err
+}
+
+func (client *DefaultClient) spawnRefreshAccessTokenScheduler(rootSpan opentracing.Span) {
+	span := jaeger.StartChildSpan(rootSpan, "client.spawnRefreshAccessTokenScheduler")
+	defer jaeger.Finish(span)
+
 	for {
-		err := backoff.Retry(
-			func() error {
-				var e error
-
-				reqSpan := jaeger.StartChildSpan(span, "client.refreshAccessToken.Retry")
-				defer jaeger.Finish(reqSpan)
-
-				tokenRefreshInterval, e = client.clientTokenGrant(reqSpan)
-				if e != nil {
-					jaeger.TraceError(reqSpan, e)
-					return e
-				}
-
-				return nil
-			},
-			b,
-		)
-
-		client.tokenRefreshError.Store(err)
-
+		tokenRefreshInterval, err := client.refreshAccessToken(span)
 		if err != nil {
 			continue
 		}
