@@ -1,3 +1,8 @@
+Release v1.7.1 (2022-03-29)
+===========================
+### Modified
+1. Add custom redirectURI on GetClientInformation mock
+
 Release v1.7.0 (2021-05-11)
 ===========================
 ### Added

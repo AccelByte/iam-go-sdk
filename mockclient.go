@@ -30,7 +30,8 @@ const (
 
 // MockClient define mock oauth client config
 type MockClient struct {
-	Healthy bool // set this to false to mock unhealthy IAM service
+	Healthy     bool   // set this to false to mock unhealthy IAM service
+	RedirectURI string // set this to use custom redirectURI
 }
 
 // NewMockClient creates new mock IAM DefaultClient
@@ -197,10 +198,16 @@ func (client *MockClient) GetRolePermissions(roleID string, opts ...Option) (per
 
 // GetClientInformation gets IAM client information
 func (client *MockClient) GetClientInformation(namespace string, clientID string, opts ...Option) (clientInfo *ClientInformation, err error) {
+	redirectURI := "http://127.0.0.1"
+
+	if client.RedirectURI != "" {
+		redirectURI = client.RedirectURI
+	}
+
 	clientInfo = &ClientInformation{
 		"client-1",
 		namespace,
-		"http://127.0.0.1",
+		redirectURI,
 		"http://127.0.0.1",
 	}
 	return clientInfo, nil
