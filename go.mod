@@ -8,6 +8,7 @@ require (
 	github.com/AccelByte/go-restful-plugins/v3 v3.2.1
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
+	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/gorhill/cronexpr v0.0.0-20180427100037-88b0669f7d75
 	github.com/opentracing/opentracing-go v1.1.0
