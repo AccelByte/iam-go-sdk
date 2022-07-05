@@ -113,12 +113,34 @@ func (multiClient *MultiClient) ValidateAccessToken(accessToken string, opts ...
 		}
 	}
 
-	return multiClient.validateJWT(claims.Issuer, accessToken, span)
+	_, err = multiClient.validateJWT(claims.Issuer, accessToken, span)
+	return err == nil, err
 }
 
 // ValidateAndParseClaims validates access token locally and returns the JWT claims contained in the token
 func (multiClient *MultiClient) ValidateAndParseClaims(accessToken string, opts ...Option) (*JWTClaims, error) {
-	return nil, errors.New("ValidateAndParseClaims not implemented on MultiClient")
+	options := processOptions(opts)
+	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "multiClient.ValidateAndParseClaims")
+	defer jaeger.Finish(span)
+
+	if !multiClient.localValidationActive {
+		return nil, errors.New("need to call StartLocalValidation first")
+	}
+
+	claims := gojwt.RegisteredClaims{}
+	parser := gojwt.Parser{}
+	_, _, err := parser.ParseUnverified(accessToken, &claims)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := multiClient.jwksNextRefresh.Load(claims.Issuer); !ok {
+		err := multiClient.getJWKS(claims.Issuer, span)
+		if err != nil {
+			log(fmt.Sprintf("unable get JWKS from IAM issuer: %s; error: %s", claims.Issuer, err))
+			return nil, nil
+		}
+	}
+	return multiClient.validateJWT(claims.Issuer, accessToken, span)
 }
 
 // ValidatePermission validates if an access token has right for a specific permission
@@ -328,33 +350,33 @@ func (multiClient *MultiClient) getPublicKey(issuer, keyID string) (*rsa.PublicK
 	return key, nil
 }
 
-func (multiClient *MultiClient) validateJWT(issuer, accessToken string, rootSpan opentracing.Span) (bool, error) {
+func (multiClient *MultiClient) validateJWT(issuer, accessToken string, rootSpan opentracing.Span) (*JWTClaims, error) {
 	jwtClaims := JWTClaims{}
 
 	webToken, err := jwt.ParseSigned(accessToken)
 	if err != nil {
-		return false, errors.Wrap(err, "validateJWT: unable to parse JWT")
+		return nil, errors.Wrap(err, "validateJWT: unable to parse JWT")
 	}
 
 	if webToken.Headers[0].KeyID == "" {
-		return false, errors.WithMessage(errInvalidTokenSignatureKey, "validateJWT: invalid header")
+		return nil, errors.WithMessage(errInvalidTokenSignatureKey, "validateJWT: invalid header")
 	}
 
 	publicKey, err := multiClient.getPublicKey(issuer, webToken.Headers[0].KeyID)
 	if err != nil {
-		return false, errors.WithMessage(err, "validateJWT: invalid key")
+		return nil, errors.WithMessage(err, "validateJWT: invalid key")
 	}
 
 	err = webToken.Claims(publicKey, &jwtClaims)
 	if err != nil {
-		return false, errors.Wrap(err, "validateJWT: unable to deserialize JWT claims")
+		return nil, errors.Wrap(err, "validateJWT: unable to deserialize JWT claims")
 	}
 
 	err = jwtClaims.Validate()
 	if err != nil {
-		return false, errors.Wrap(err, "validateJWT: unable to validate JWT")
+		return nil, errors.Wrap(err, "validateJWT: unable to validate JWT")
 	}
-	return true, nil
+	return &jwtClaims, nil
 }
 
 func (multiClient *MultiClient) refreshJWKS(rootSpan opentracing.Span) {
