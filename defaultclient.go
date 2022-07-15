@@ -194,7 +194,7 @@ func (client *DefaultClient) ClientTokenGrant(opts ...Option) error {
 	if err != nil {
 		jaeger.TraceError(span, err)
 
-		return logAndReturnErr(
+		return logWithStackTraceAndReturnErr(
 			errors.WithMessage(err,
 				"ClientTokenGrant: unable to do token grant"))
 	}
@@ -234,7 +234,7 @@ func (client *DefaultClient) StartLocalValidation(opts ...Option) error {
 		jaeger.TraceError(span, errors.WithMessage(err,
 			"StartLocalValidation: unable to get JWKS"))
 
-		return logAndReturnErr(
+		return logWithStackTraceAndReturnErr(
 			errors.WithMessage(err,
 				"StartLocalValidation: unable to get JWKS"))
 	}
@@ -244,7 +244,7 @@ func (client *DefaultClient) StartLocalValidation(opts ...Option) error {
 		jaeger.TraceError(span, errors.WithMessage(err,
 			"StartLocalValidation: unable to get revocation list"))
 
-		return logAndReturnErr(
+		return logWithStackTraceAndReturnErr(
 			errors.WithMessage(err,
 				"StartLocalValidation: unable to get revocation list"))
 	}
@@ -415,7 +415,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 				b,
 			)
 		if err != nil {
-			err = logAndReturnErr(
+			err = logWithStackTraceAndReturnErr(
 				errors.WithMessage(err,
 					"ValidatePermission: unable to get role perms"))
 			jaeger.TraceError(span, err)
@@ -464,7 +464,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 				b,
 			)
 		if err != nil {
-			err = logAndReturnErr(
+			err = logWithStackTraceAndReturnErr(
 				errors.WithMessage(err,
 					"ValidatePermission: unable to get role perms"))
 			jaeger.TraceError(span, err)
@@ -575,13 +575,13 @@ func (client *DefaultClient) HealthCheck(opts ...Option) bool {
 	defer jaeger.Finish(span)
 
 	if client.jwksRefreshError != nil {
-		logErr(client.jwksRefreshError,
+		logErrWithStackTrace(client.jwksRefreshError,
 			"HealthCheck: error in JWKs refresh")
 		return false
 	}
 
 	if client.revocationListRefreshError != nil {
-		logErr(client.revocationListRefreshError,
+		logErrWithStackTrace(client.revocationListRefreshError,
 			"HealthCheck: error in revocation list refresh")
 		return false
 	}
@@ -589,7 +589,7 @@ func (client *DefaultClient) HealthCheck(opts ...Option) bool {
 	isTokenRefreshActive := client.tokenRefreshActive.Load()
 	tokenRefreshError := client.tokenRefreshError.Load()
 	if isTokenRefreshActive && tokenRefreshError != nil {
-		logErr(
+		logErrWithStackTrace(
 			tokenRefreshError,
 			"HealthCheck: error in token refresh",
 		)
@@ -720,7 +720,7 @@ func (client *DefaultClient) GetRolePermissions(roleID string, opts ...Option) (
 			b,
 		)
 	if err != nil {
-		err = logAndReturnErr(
+		err = logWithStackTraceAndReturnErr(
 			errors.WithMessage(err,
 				"GetRolePermissions: unable to get role perms"))
 		jaeger.TraceError(span, err)
@@ -785,7 +785,7 @@ func (client *DefaultClient) fetchClientInformation(namespace string, clientID s
 				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
-				logErr(jErr)
+				logErrWithStackTrace(jErr)
 
 				resp, e := client.httpClient.Do(req)
 				if e != nil {

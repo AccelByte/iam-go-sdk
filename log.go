@@ -25,7 +25,21 @@ func log(s ...interface{}) {
 	fmt.Println(s...)
 }
 
-func logErr(err error, s ...interface{}) {
+func logErrWithStackTrace(err error, s ...interface{}) {
+	doLogErr(err, true, s)
+}
+
+func logAndReturnErr(err error, s ...interface{}) error {
+	doLogErr(err, false, s)
+	return err
+}
+
+func logWithStackTraceAndReturnErr(err error, s ...interface{}) error {
+	doLogErr(err, true, s)
+	return err
+}
+
+func doLogErr(err error, printStackTrace bool, s ...interface{}) {
 	if !debug.Load() {
 		return
 	}
@@ -36,11 +50,9 @@ func logErr(err error, s ...interface{}) {
 
 	fmt.Print("[IAM-Go-SDK] ")
 	fmt.Println(s...)
-	fmt.Printf("%+v\n", err)
-}
-
-// nolint: unparam
-func logAndReturnErr(err error, s ...interface{}) error {
-	logErr(err, s...)
-	return err
+	if printStackTrace {
+		fmt.Printf("%+v\n", err)
+	} else {
+		fmt.Printf("%+v\n", err.Error())
+	}
 }

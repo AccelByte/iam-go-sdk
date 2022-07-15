@@ -101,7 +101,7 @@ func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
 				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
-				logErr(jErr)
+				logErrWithStackTrace(jErr)
 
 				resp, e := client.httpClient.Do(req)
 				if e != nil {
