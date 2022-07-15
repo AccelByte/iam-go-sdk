@@ -58,7 +58,7 @@ func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan op
 				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
-				logErrWithStackTrace(jErr)
+				logWithStackTraceErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
 				if e != nil {
@@ -238,7 +238,7 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
-				logErrWithStackTrace(jErr)
+				logWithStackTraceErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
 				if e != nil {

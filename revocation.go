@@ -92,7 +92,7 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 				reqSpan := jaeger.StartChildSpan(span, "client.getRevocationList.Retry")
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
-				logErrWithStackTrace(jErr)
+				logWithStackTraceErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
 

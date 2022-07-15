@@ -25,7 +25,7 @@ func log(s ...interface{}) {
 	fmt.Println(s...)
 }
 
-func logErrWithStackTrace(err error, s ...interface{}) {
+func logWithStackTraceErr(err error, s ...interface{}) {
 	doLogErr(err, true, s)
 }
 

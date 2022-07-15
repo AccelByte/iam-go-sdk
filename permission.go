@@ -152,7 +152,7 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
-				logErrWithStackTrace(jErr)
+				logWithStackTraceErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
 				if e != nil {

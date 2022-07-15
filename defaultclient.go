@@ -575,13 +575,13 @@ func (client *DefaultClient) HealthCheck(opts ...Option) bool {
 	defer jaeger.Finish(span)
 
 	if client.jwksRefreshError != nil {
-		logErrWithStackTrace(client.jwksRefreshError,
+		logWithStackTraceErr(client.jwksRefreshError,
 			"HealthCheck: error in JWKs refresh")
 		return false
 	}
 
 	if client.revocationListRefreshError != nil {
-		logErrWithStackTrace(client.revocationListRefreshError,
+		logWithStackTraceErr(client.revocationListRefreshError,
 			"HealthCheck: error in revocation list refresh")
 		return false
 	}
@@ -589,7 +589,7 @@ func (client *DefaultClient) HealthCheck(opts ...Option) bool {
 	isTokenRefreshActive := client.tokenRefreshActive.Load()
 	tokenRefreshError := client.tokenRefreshError.Load()
 	if isTokenRefreshActive && tokenRefreshError != nil {
-		logErrWithStackTrace(
+		logWithStackTraceErr(
 			tokenRefreshError,
 			"HealthCheck: error in token refresh",
 		)
@@ -785,7 +785,7 @@ func (client *DefaultClient) fetchClientInformation(namespace string, clientID s
 				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
 				defer jaeger.Finish(reqSpan)
 				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
-				logErrWithStackTrace(jErr)
+				logWithStackTraceErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
 				if e != nil {
