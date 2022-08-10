@@ -136,18 +136,18 @@ type NamespaceRole struct {
 
 // JWTClaims holds data stored in a JWT access token with additional Justice Flags field
 type JWTClaims struct {
-	Namespace             string          `json:"namespace"`
-	DisplayName           string          `json:"display_name"`
-	Roles                 []string        `json:"roles"`
-	AcceptedPolicyVersion []string        `json:"accepted_policy_version"`
-	NamespaceRoles        []NamespaceRole `json:"namespace_roles"`
-	Permissions           []Permission    `json:"permissions"`
-	Bans                  []JWTBan        `json:"bans"`
-	JusticeFlags          int             `json:"jflgs"`
-	Scope                 string          `json:"scope"`
-	Country               string          `json:"country"`
-	ClientID              string          `json:"client_id"`
-	IsComply              bool            `json:"is_comply"`
+	Namespace       string          `json:"namespace"`
+	DisplayName     string          `json:"display_name"`
+	Roles           []string        `json:"roles"`
+	NamespaceRoles  []NamespaceRole `json:"namespace_roles"`
+	Permissions     []Permission    `json:"permissions"`
+	Bans            []JWTBan        `json:"bans"`
+	JusticeFlags    int             `json:"jflgs"`
+	Scope           string          `json:"scope"`
+	Country         string          `json:"country"`
+	ClientID        string          `json:"client_id"`
+	IsComply        bool            `json:"is_comply"`
+	StudioNamespace string          `json:"studio_namespace,omitempty"`
 	jwt.Claims
 }
 
