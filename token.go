@@ -134,6 +134,9 @@ func (client *DefaultClient) validateJWT(token string, rootSpan opentracing.Span
 
 	err = jwtClaims.Validate()
 	if err != nil {
+		if err == jwt.ErrExpired {
+			return nil, errTokenExpired
+		}
 		return nil, errors.Wrap(err, "validateJWT: unable to validate JWT")
 	}
 
