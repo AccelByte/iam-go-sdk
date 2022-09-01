@@ -29,4 +29,5 @@ var (
 	errInvalidTokenSignatureKey = errors.New("invalid token signature key ID")
 	errRoleNotFound             = errors.New("role not found")
 	errNoLocalValidation        = errors.New("local validation is not active, activate by calling StartLocalValidation()")
+	errTokenExpired             = errors.New("token is expired")
 )

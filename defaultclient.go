@@ -324,6 +324,10 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...
 
 	claims, err := client.validateJWT(accessToken, span)
 	if err != nil {
+		if err == errTokenExpired {
+			jaeger.TraceError(span, err)
+			return nil, err
+		}
 		err = logAndReturnErr(
 			errors.WithMessage(err,
 				"ValidateAndParseClaims: unable to validate JWT"))
