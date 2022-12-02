@@ -147,7 +147,7 @@ type JWTClaims struct {
 	Country         string          `json:"country"`
 	ClientID        string          `json:"client_id"`
 	IsComply        bool            `json:"is_comply"`
-	StudioNamespace string          `json:"studio_namespace,omitempty"`
+	ParentNamespace string          `json:"parent_namespace,omitempty"`
 	jwt.Claims
 }
 
