@@ -85,6 +85,10 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Opt
 
 	claims.Audience = append(claims.Audience, MockAudience)
 
+	if accessToken == "mock_token" {
+		claims.Subject = ""
+	}
+
 	switch accessToken {
 	case MockUnauthorized:
 		return nil, errUnauthorized
