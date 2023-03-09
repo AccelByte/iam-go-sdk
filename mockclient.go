@@ -26,6 +26,7 @@ const (
 	MockForbidden    = "forbidden"
 	MockAudience     = "http://example.com"
 	MockSecret       = "mocksecret"
+	ClientToken      = "mock_token"
 )
 
 // MockClient define mock oauth client config
@@ -48,7 +49,7 @@ func (client *MockClient) ClientTokenGrant(opts ...Option) error {
 
 // ClientToken returns client access token
 func (client *MockClient) ClientToken(opts ...Option) string {
-	return "mock_token"
+	return ClientToken
 }
 
 // StartLocalValidation starts goroutines to refresh JWK and revocation list periodically
@@ -85,6 +86,11 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Opt
 
 	claims.Audience = append(claims.Audience, MockAudience)
 
+	// non user token will has empty Subject
+	if accessToken == ClientToken {
+		claims.Subject = ""
+	}
+
 	switch accessToken {
 	case MockUnauthorized:
 		return nil, errUnauthorized
@@ -105,9 +111,12 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Opt
 
 // ValidatePermission validates if an access token has right for a specific permission
 // requiredPermission: permission to access resource, example:
-// 		{Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
+//
+//	{Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
+//
 // permissionResources: resource string to replace the `{}` placeholder in
-// 		`requiredPermission`, example: p["{namespace}"] = "accelbyte"
+//
+//	`requiredPermission`, example: p["{namespace}"] = "accelbyte"
 func (client *MockClient) ValidatePermission(claims *JWTClaims,
 	requiredPermission Permission, permissionResources map[string]string, opts ...Option) (bool, error) {
 	if claims.Permissions[0].Resource == MockForbidden {
