@@ -148,6 +148,8 @@ type JWTClaims struct {
 	ClientID        string          `json:"client_id"`
 	IsComply        bool            `json:"is_comply"`
 	ParentNamespace string          `json:"parent_namespace,omitempty"`
+	UnionID         string          `json:"union_id,omitempty"`
+	UnionNamespace  string          `json:"union_namespace,omitempty"`
 	jwt.Claims
 }
 

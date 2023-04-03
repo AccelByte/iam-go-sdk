@@ -1,3 +1,8 @@
+Release v1.9.1 (2023-03-31)
+===========================
+### Modified
+1. Add union_id & union_namespace to JWTClaims
+
 Release v1.7.1 (2022-03-29)
 ===========================
 ### Modified
