@@ -1,3 +1,10 @@
+Release v2.0.0 (2023-04-11)
+===========================
+### Modified
+1. Upgrade to use IAM v3 version 
+* Required Permission:
+  * (required) `ADMIN:ROLE [READ]`
+
 Release v1.9.1 (2023-03-31)
 ===========================
 ### Modified
