@@ -41,11 +41,11 @@ const (
 )
 
 const (
-	jwksPath              = "/oauth/jwks"
-	grantPath             = "/oauth/token"
-	revocationListPath    = "/oauth/revocationlist"
-	verifyPath            = "/oauth/verify"
-	getRolePath           = "/roles"
+	jwksPath              = "/v3/oauth/jwks"
+	grantPath             = "/v3/oauth/token"
+	revocationListPath    = "/v3/oauth/revocationlist"
+	verifyPath            = "/v3/oauth/verify"
+	getRolePath           = "/v3/admin/roles"
 	clientInformationPath = "/v3/admin/namespaces/%s/clients/%s"
 
 	defaultTokenRefreshRate              = 0.8
@@ -361,9 +361,13 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...
 
 // ValidatePermission validates if an access token has right for a specific permission
 // requiredPermission: permission to access resource, example:
-// 		{Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
+//
+//	{Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
+//
 // permissionResources: resource string to replace the `{}` placeholder in
-// 		`requiredPermission`, example: p["{namespace}"] = "accelbyte"
+//
+//	`requiredPermission`, example: p["{namespace}"] = "accelbyte"
+//
 // nolint: funlen
 func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 	requiredPermission Permission, permissionResources map[string]string, opts ...Option) (bool, error) {

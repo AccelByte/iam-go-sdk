@@ -51,17 +51,12 @@ type TokenResponse struct {
 	IsComply              bool            `json:"is_comply"`
 }
 
-// Permission holds information about the actions can be performed to the resource.
-// Action is a bit flag of CREATE READ UPDATE and DELETE.
-// Schedule is a string in quartz compatible cron syntax that
-// is using github.com/gorhill/cronexpr to parse.
-// in range type, first element will be start date, and second one will be end date
 type Permission struct {
-	Resource        string
-	Action          int
-	ScheduledAction int      `json:"SchedAction,omitempty"`
-	CronSchedule    string   `json:"SchedCron,omitempty"`
-	RangeSchedule   []string `json:"SchedRange,omitempty"`
+	Resource        string   `json:"resource"`
+	Action          int      `json:"action"`
+	ScheduledAction int      `json:"schedAction,omitempty"`
+	CronSchedule    string   `json:"schedCron,omitempty"`
+	RangeSchedule   []string `json:"schedRange,omitempty"`
 }
 
 // IsScheduled checks if the schedule is
@@ -122,11 +117,12 @@ func (perm Permission) isInRange() bool {
 	return true
 }
 
-// Role holds info about a user role.
 type Role struct {
-	RoleID      string `json:"RoleId"`
-	RoleName    string
-	Permissions []Permission
+	IsWildcard  bool         `json:"isWildcard"`
+	AdminRole   bool         `json:"adminRole"`
+	RoleID      string       `json:"roleId"`
+	RoleName    string       `json:"roleName"`
+	Permissions []Permission `json:"permissions"`
 }
 
 type NamespaceRole struct {
