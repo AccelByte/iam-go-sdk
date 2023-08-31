@@ -1,4 +1,4 @@
-module github.com/AccelByte/iam-go-sdk
+module github.com/AccelByte/iam-go-sdk/v2
 
 go 1.13
 

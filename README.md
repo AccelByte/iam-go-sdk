@@ -9,7 +9,7 @@ This is AccelByte's IAM Go SDK for integrating with IAM in Go projects.
 ### Importing package
 
 ```go
-import "github.com/AccelByte/iam-go-sdk"
+import "github.com/AccelByte/iam-go-sdk/v2"
 ```
 
 ### Creating default IAM client
