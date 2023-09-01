@@ -67,6 +67,9 @@ func Test_MockClientValidateAndParseClaims(t *testing.T) {
 	assert.Equal(t, payload.Namespace, claims.Namespace, "namespace should be equal")
 	assert.Equal(t, payload.UserID, claims.Subject, "userID should be equal")
 	assert.Equal(t, payload.ClientID, claims.ClientID, "clientID should be equal")
+	assert.ElementsMatch(t, claims.Permissions, []Permission{
+		{Resource: "MOCK", Action: ActionCreate | ActionRead | ActionUpdate | ActionDelete},
+	})
 
 	if len(claims.Audience) == 1 {
 		assert.Equal(t, MockAudience, claims.Audience[0], "audience should be equal")

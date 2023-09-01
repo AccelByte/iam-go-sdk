@@ -52,8 +52,8 @@ type TokenResponse struct {
 }
 
 type Permission struct {
-	Resource        string   `json:"resource"`
-	Action          int      `json:"action"`
+	Resource        string   `json:"Resource"`
+	Action          int      `json:"Action"`
 	ScheduledAction int      `json:"schedAction,omitempty"`
 	CronSchedule    string   `json:"schedCron,omitempty"`
 	RangeSchedule   []string `json:"schedRange,omitempty"`
