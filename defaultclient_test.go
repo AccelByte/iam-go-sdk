@@ -36,6 +36,7 @@ import (
 	cache "github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -387,6 +388,7 @@ func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
 	userData := &tokenUserData{
 		UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
 		Permissions: []Permission{grantedPermission},
+		Namespace:   "testnamespace1234",
 	}
 
 	claims := generateClaims(t, userData)
@@ -408,6 +410,10 @@ func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
 	)
 	assert.Nil(t, errValidateAndParseClaims, "access token is invalid")
 	assert.NotNil(t, claims, "claims should not nil")
+	assert.Equal(t, userData.Namespace, claims.Namespace, "namespace should be equal")
+	assert.Equal(t, userData.UserID, claims.Subject, "subject should be equal with access token")
+	assert.Equal(t, userData.ClientID, claims.ClientID, "clientID should be equal")
+	assert.ElementsMatch(t, userData.Permissions, claims.Permissions)
 }
 
 func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
@@ -426,9 +432,7 @@ func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
 	claims.Expiry = jwt.NewNumericDate(time.Now().UTC().Add(-time.Minute))
 
 	accessToken, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	claims, errValidateAndParseClaims := testClient.ValidateAndParseClaims(accessToken)
 
