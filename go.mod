@@ -6,6 +6,7 @@ require (
 	github.com/AccelByte/bloom v0.0.0-20180915202807-98c052463922
 	github.com/AccelByte/go-jose v2.1.4+incompatible
 	github.com/AccelByte/go-restful-plugins/v3 v3.2.1
+	github.com/bluele/gcache v0.0.2
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/google/uuid v1.1.1

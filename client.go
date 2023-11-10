@@ -22,29 +22,31 @@ import (
 // It can be used as mocking point
 // usage example:
 //
-// func main() {
-// 	config := Config{
-// 		BaseURL:      "/iam",
-// 		ClientID:     "clientID",
-// 		ClientSecret: "clientSecret",
-// 	}
+//	func main() {
+//		config := Config{
+//			BaseURL:      "/iam",
+//			ClientID:     "clientID",
+//			ClientSecret: "clientSecret",
+//		}
 //
-// 	iamClient, _ := client.NewClient(&config)
-// 	myFunction(iamClient)
-// }
+//		iamClient, _ := client.NewClient(&config)
+//		myFunction(iamClient)
+//	}
 //
-// func myFunction(iamClient *client.IAMClientAPI) {
-// 	iamClient.ValidateTokenPermission(models.Permission{
-// 		Resource: "NAMESPACE:{namespace}:EXAMPLE", Action: 4
-// 		}, "accessToken")
-// }
-//
+//	func myFunction(iamClient *client.IAMClientAPI) {
+//		iamClient.ValidateTokenPermission(models.Permission{
+//			Resource: "NAMESPACE:{namespace}:EXAMPLE", Action: 4
+//			}, "accessToken")
+//	}
 type Client interface {
 	// ClientTokenGrant starts client token grant to get client bearer token for role caching
 	ClientTokenGrant(opts ...Option) error
 
 	// ClientToken returns client access token
 	ClientToken(opts ...Option) string
+
+	// DelegateToken
+	DelegateToken(extendNamespace string, opts ...Option) (string, error)
 
 	// StartLocalValidation starts goroutines to refresh JWK and revocation list periodically
 	// this enables local token validation

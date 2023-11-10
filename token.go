@@ -298,3 +298,93 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 
 	return refreshInterval, nil
 }
+
+// nolint: funlen, dupl
+func (client *DefaultClient) clientDelegateTokenGrant(extendNamespace string, rootSpan opentracing.Span) (token string, ttl *time.Duration, err error) {
+	span := jaeger.StartChildSpan(rootSpan, "client.clientDelegateTokenGrant")
+	defer jaeger.Finish(span)
+
+	form := url.Values{}
+	form.Add("grant_type", "urn:ietf:params:oauth:grant-type:extend_client_credentials")
+	form.Add("extendNamespace", extendNamespace)
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		client.config.BaseURL+grantPath,
+		bytes.NewBufferString(form.Encode()),
+	)
+	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "clientDelegateTokenGrant: unable to create new HTTP request"))
+		return "", nil, errors.Wrap(err, "clientDelegateTokenGrant: unable to create new HTTP request")
+	}
+
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(client.config.ClientID, client.config.ClientSecret)
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+
+	var responseStatusCode int
+
+	var responseBodyBytes []byte
+
+	err = backoff.
+		Retry(
+			func() error {
+				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer jaeger.Finish(reqSpan)
+				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
+				logErr(jErr)
+
+				resp, e := client.httpClient.Do(req)
+				if e != nil {
+					return backoff.Permanent(e)
+				}
+				defer resp.Body.Close()
+
+				responseStatusCode = resp.StatusCode
+				if resp.StatusCode >= http.StatusInternalServerError {
+					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
+					return errors.Errorf("clientDelegateTokenGrant: endpoint returned status code : %v", responseStatusCode)
+				}
+
+				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				if e != nil {
+					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					return errors.Wrap(e, "clientDelegateTokenGrant: unable to read response body")
+				}
+
+				return nil
+			},
+			b,
+		)
+
+	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "clientDelegateTokenGrant: unable to do HTTP request"))
+		return "", nil, errors.Wrap(err, "clientDelegateTokenGrant: unable to do HTTP request")
+	}
+
+	if responseStatusCode != http.StatusOK {
+		jaeger.TraceError(
+			span,
+			errors.Errorf(
+				"clientDelegateTokenGrant: unable to grant delegate client token: error code : %d, error message : %s",
+				responseStatusCode,
+				string(responseBodyBytes),
+			),
+		)
+
+		return "", nil, errors.Errorf("clientDelegateTokenGrant: unable to grant client delegate token: error code : %d, error message : %s",
+			responseStatusCode, string(responseBodyBytes))
+	}
+
+	var tokenResponse *TokenResponse
+
+	err = json.Unmarshal(responseBodyBytes, &tokenResponse)
+	if err != nil {
+		jaeger.TraceError(span, errors.Wrap(err, "clientDelegateTokenGrant: unable to unmarshal response body"))
+		return "", nil, errors.Wrap(err, "clientDelegateTokenGrant: unable to unmarshal response body")
+	}
+	refreshInterval := time.Duration(float64(tokenResponse.ExpiresIn)*defaultTokenRefreshRate) * time.Second
+	return tokenResponse.AccessToken, &refreshInterval, nil
+}

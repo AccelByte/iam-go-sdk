@@ -51,6 +51,10 @@ func (client *MockClient) ClientToken(opts ...Option) string {
 	return "mock_token"
 }
 
+func (client *MockClient) DelegateToken(extendNamespace string, opts ...Option) (string, error) {
+	return "mock_delegate_token", nil
+}
+
 // StartLocalValidation starts goroutines to refresh JWK and revocation list periodically
 // this enables local token validation
 func (client *MockClient) StartLocalValidation(opts ...Option) error {
@@ -105,9 +109,12 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Opt
 
 // ValidatePermission validates if an access token has right for a specific permission
 // requiredPermission: permission to access resource, example:
-// 		{Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
+//
+//	{Resource: "NAMESPACE:{namespace}:USER:{userId}", Action: 2}
+//
 // permissionResources: resource string to replace the `{}` placeholder in
-// 		`requiredPermission`, example: p["{namespace}"] = "accelbyte"
+//
+//	`requiredPermission`, example: p["{namespace}"] = "accelbyte"
 func (client *MockClient) ValidatePermission(claims *JWTClaims,
 	requiredPermission Permission, permissionResources map[string]string, opts ...Option) (bool, error) {
 	if claims.Permissions[0].Resource == MockForbidden {

@@ -148,6 +148,7 @@ type JWTClaims struct {
 	IssuedPlatformOn   string          `json:"ipo,omitempty"`
 	UnionID            string          `json:"union_id,omitempty"`
 	UnionNamespace     string          `json:"union_namespace,omitempty"`
+	ExtendNamespace    string          `json:"extend_namespace,omitempty"`
 	jwt.Claims
 }
 
