@@ -18,6 +18,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
+	"github.com/bluele/gcache"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -90,6 +91,7 @@ type DefaultClient struct {
 	tokenRefreshError          atomic.Error
 	remoteTokenValidation      func(accessToken string, span opentracing.Span) (bool, error)
 	clientInfoCache            *cache.Cache
+	delegateTokenCache         gcache.Cache
 	// for easily mocking the HTTP call
 	httpClient HTTPClient
 }
@@ -131,6 +133,12 @@ func NewDefaultClient(config *Config) *DefaultClient {
 		httpClient:   &http.Client{},
 	}
 	client.remoteTokenValidation = client.validateAccessToken
+	client.delegateTokenCache = gcache.New(1000).LRU().
+		LoaderExpireFunc(func(extendNamespace interface{}) (interface{}, *time.Duration, error) {
+			token, ttl, err := client.clientDelegateTokenGrant(extendNamespace.(string), nil)
+			return token, ttl, err
+		}).
+		Build()
 
 	debug.Store(config.Debug)
 
@@ -219,6 +227,18 @@ func (client *DefaultClient) ClientToken(opts ...Option) string {
 	defer jaeger.Finish(span)
 
 	return client.clientAccessToken.Load()
+}
+
+func (client *DefaultClient) DelegateToken(extendNamespace string, opts ...Option) (string, error) {
+	options := processOptions(opts)
+	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.DelegateToken")
+	defer jaeger.Finish(span)
+
+	delegateToken, err := client.delegateTokenCache.Get(extendNamespace)
+	if err != nil {
+		return "", err
+	}
+	return delegateToken.(string), err
 }
 
 // StartLocalValidation starts goroutines to refresh JWK and revocation list periodically

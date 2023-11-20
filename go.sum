@@ -9,6 +9,8 @@ github.com/AccelByte/iam-go-sdk v1.1.2 h1:LhmzKaXAsedI4BVLVmYtDTIsDcc+d51vP2CZ9a
 github.com/AccelByte/iam-go-sdk v1.1.2/go.mod h1:M1Eplqpph/Msxm7XKgZRI+cYBCCChFdgPiVdKYupwq8=
 github.com/AccelByte/public-source-ip v1.0.0/go.mod h1:L7zIgt3UaXkGH7NoKFCbxPdWZOVwn+d6uW/5yYRXtnQ=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+github.com/bluele/gcache v0.0.2 h1:WcbfdXICg7G/DGBh1PFfcirkWOQV+v077yF1pSy3DGw=
+github.com/bluele/gcache v0.0.2/go.mod h1:m15KV+ECjptwSPxKhOhQoAFQVtUFjTVkc3H8o0t/fp0=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=

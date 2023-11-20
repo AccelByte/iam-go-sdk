@@ -1,3 +1,8 @@
+Release v2.2.1 (2023-11-10)
+===========================
+### Added
+1. Support delegate token grant & update claim to include extend_namespace
+
 Release v2.0.0 (2023-04-11)
 ===========================
 ### Modified
