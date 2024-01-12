@@ -57,11 +57,14 @@ const (
 
 	clientInfoExpiration = 1 * time.Minute
 	scopeSeparator       = " "
+
+	defaultBasicServiceBaseURI = "http://justice-basic-service/basic"
 )
 
 // Config contains IAM configurations
 type Config struct {
 	BaseURL                       string
+	BasicBaseURL                  string
 	ClientID                      string
 	ClientSecret                  string
 	RolesCacheExpirationTime      time.Duration // default: 60s
@@ -92,6 +95,7 @@ type DefaultClient struct {
 	remoteTokenValidation      func(accessToken string, span opentracing.Span) (bool, error)
 	clientInfoCache            *cache.Cache
 	delegateTokenCache         gcache.Cache
+	namespaceContextCache      gcache.Cache
 	// for easily mocking the HTTP call
 	httpClient HTTPClient
 }
@@ -118,6 +122,10 @@ func NewDefaultClient(config *Config) *DefaultClient {
 		config.RevocationListRefreshInterval = defaultRevocationListRefreshInterval
 	}
 
+	if len(config.BasicBaseURL) == 0 {
+		config.BasicBaseURL = defaultBasicServiceBaseURI
+	}
+
 	client := &DefaultClient{
 		config: config,
 		rolePermissionCache: cache.New(
@@ -137,6 +145,19 @@ func NewDefaultClient(config *Config) *DefaultClient {
 		LoaderExpireFunc(func(extendNamespace interface{}) (interface{}, *time.Duration, error) {
 			token, ttl, err := client.clientDelegateTokenGrant(extendNamespace.(string), nil)
 			return token, ttl, err
+		}).
+		Build()
+
+	client.namespaceContextCache = gcache.New(1000).LRU().
+		LoaderExpireFunc(func(namespace interface{}) (interface{}, *time.Duration, error) {
+			namespaceCtx, err := client.getNamespaceContext(namespace.(string))
+			ttl := time.Hour
+			if err == ErrNamespaceNotFound {
+				ttl = time.Minute * 3
+				// by this way, these not found namespace can still have a short time cache
+				return &NamespaceContext{NotFound: true}, &ttl, nil
+			}
+			return namespaceCtx, &ttl, err
 		}).
 		Build()
 

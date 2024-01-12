@@ -17,6 +17,7 @@ import "github.com/AccelByte/iam-go-sdk/v2"
 ```go
 cfg := &iam.Config{
     BaseURL: "<IAM URL>",
+	BasicBaseURL: "<Basic URL>",
     ClientID: "<client ID>",
     ClientSecret: "<client secret>",
 }

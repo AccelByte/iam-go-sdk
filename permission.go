@@ -17,6 +17,7 @@ package iam
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -81,6 +82,37 @@ func (client *DefaultClient) resourceAllowed(accessPermissionResource string, re
 		requiredSection := requiredPermResSections[i]
 
 		if userSection != requiredSection && userSection != "*" {
+			if strings.HasSuffix(userSection, "+") && i > 0 {
+				previousSeg := accessPermResSections[i-1]
+				if previousSeg == resourceNamespace {
+					// assigned namespace `{studio}+` will allow studio & its related games
+					// it is new format game namespace
+					if strings.Contains(requiredSection, "+") && len(strings.Split(requiredSection, "+")) > 1 {
+						if strings.HasPrefix(requiredSection, userSection) {
+							continue
+						}
+						return false
+					}
+					// the request resource namespace is this studio
+					if userSection == (requiredSection + "+") {
+						continue
+					}
+					namespaceContextCache, err := client.namespaceContextCache.Get(requiredSection)
+					if err != nil {
+						logrus.Warnf("unable to get namespace context: %v", err)
+						return false
+					}
+					namespaceContext := namespaceContextCache.(*NamespaceContext)
+					if namespaceContext.NotFound {
+						return false
+					}
+					if namespaceContext.Type == NamespaceTypeGame {
+						if strings.HasPrefix(userSection, namespaceContext.StudioNamespace) {
+							continue
+						}
+					}
+				}
+			}
 			return false
 		}
 	}
