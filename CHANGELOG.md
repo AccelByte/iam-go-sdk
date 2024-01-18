@@ -1,3 +1,12 @@
+Release v2.3.0 (2024-01-12)
+===========================
+### Modified
+1. Update permission check logic to support latest namespace roles format ```{studio}+```
+2. this version need following config if in multi-tenant:
+   * default basic service base url is: ```http://justice-basic-service/basic```, can be overridden by setting `Config/BasicBaseURL`
+   * client permission should include: ```action: 2 resource: ADMIN:NAMESPACE:*:NAMESPACE```
+
+
 Release v2.2.1 (2023-11-10)
 ===========================
 ### Added

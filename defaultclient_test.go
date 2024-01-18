@@ -785,6 +785,42 @@ func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
 	}
 }
 
+func Test_HasRoleForStudioAndRelatedGames(t *testing.T) {
+	t.Parallel()
+
+	grantedPermission := Permission{
+		Resource: "NAMESPACE:studio1+:CLIENT",
+		Action:   1,
+	}
+	requiredPermission := Permission{
+		Resource: "NAMESPACE:{namespace}:CLIENT",
+		Action:   1,
+	}
+
+	userData := &tokenUserData{
+		UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Namespace:   "studio1+game1",
+		Permissions: []Permission{grantedPermission},
+	}
+	claims := generateClaims(t, userData)
+
+	permissionResources := make(map[string]string)
+	permissionResources["{namespace}"] = userData.Namespace
+	validationResult, _ := testClient.ValidatePermission(claims, requiredPermission, permissionResources)
+	assert.True(t, validationResult, "should valid")
+
+	userData = &tokenUserData{
+		UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Namespace:   "studio2+game1",
+		Permissions: []Permission{grantedPermission},
+	}
+	claims = generateClaims(t, userData)
+
+	permissionResources["{namespace}"] = userData.Namespace
+	validationResult, _ = testClient.ValidatePermission(claims, requiredPermission, permissionResources)
+	assert.False(t, validationResult, "should invalid")
+}
+
 func Test_DefaultClientValidateRoleID(t *testing.T) {
 	t.Parallel()
 
