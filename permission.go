@@ -82,19 +82,19 @@ func (client *DefaultClient) resourceAllowed(accessPermissionResource string, re
 		requiredSection := requiredPermResSections[i]
 
 		if userSection != requiredSection && userSection != "*" {
-			if strings.HasSuffix(userSection, "+") && i > 0 {
+			if strings.HasSuffix(userSection, "-") && i > 0 {
 				previousSeg := accessPermResSections[i-1]
 				if previousSeg == resourceNamespace {
-					// assigned namespace `{studio}+` will allow studio & its related games
+					// assigned namespace `{studio}-` will allow studio & its related games
 					// it is new format game namespace
-					if strings.Contains(requiredSection, "+") && len(strings.Split(requiredSection, "+")) > 1 {
+					if strings.Contains(requiredSection, "-") && len(strings.Split(requiredSection, "-")) == 2 {
 						if strings.HasPrefix(requiredSection, userSection) {
 							continue
 						}
 						return false
 					}
 					// the request resource namespace is this studio
-					if userSection == (requiredSection + "+") {
+					if userSection == (requiredSection + "-") {
 						continue
 					}
 					namespaceContextCache, err := client.namespaceContextCache.Get(requiredSection)

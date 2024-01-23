@@ -1,3 +1,8 @@
+Release v2.4.0 (2024-01-23)
+===========================
+### Modified
+1. adjust new game namespace ```{studio}-{game}```
+
 Release v2.3.0 (2024-01-12)
 ===========================
 ### Modified
