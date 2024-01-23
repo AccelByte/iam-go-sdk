@@ -789,7 +789,7 @@ func Test_HasRoleForStudioAndRelatedGames(t *testing.T) {
 	t.Parallel()
 
 	grantedPermission := Permission{
-		Resource: "NAMESPACE:studio1+:CLIENT",
+		Resource: "NAMESPACE:studio1-:CLIENT",
 		Action:   1,
 	}
 	requiredPermission := Permission{
@@ -799,7 +799,7 @@ func Test_HasRoleForStudioAndRelatedGames(t *testing.T) {
 
 	userData := &tokenUserData{
 		UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
-		Namespace:   "studio1+game1",
+		Namespace:   "studio1-game1",
 		Permissions: []Permission{grantedPermission},
 	}
 	claims := generateClaims(t, userData)
