@@ -1,3 +1,8 @@
+Release v2.4.1 (2024-01-24)
+===========================
+### Modified
+1. Fix the permission check logic for role assignment `{studio}-`
+
 Release v2.4.0 (2024-01-23)
 ===========================
 ### Modified

@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"github.com/bluele/gcache"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -811,13 +812,65 @@ func Test_HasRoleForStudioAndRelatedGames(t *testing.T) {
 
 	userData = &tokenUserData{
 		UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
-		Namespace:   "studio2+game1",
+		Namespace:   "studio2-game1",
 		Permissions: []Permission{grantedPermission},
 	}
 	claims = generateClaims(t, userData)
 
 	permissionResources["{namespace}"] = userData.Namespace
 	validationResult, _ = testClient.ValidatePermission(claims, requiredPermission, permissionResources)
+	assert.False(t, validationResult, "should invalid")
+}
+
+func Test_HasRoleForStudioAndRelatedGameWithOldFormatNamespace(t *testing.T) {
+	t.Parallel()
+
+	mockClient := &DefaultClient{
+		config:                &Config{ClientID: "a952b5c054de468bab9e0b4802057f11"},
+		keys:                  make(map[string]*rsa.PublicKey),
+		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		revocationFilter:      bloom.New(100),
+		revokedUsers:          make(map[string]time.Time),
+		localValidationActive: true,
+		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
+		namespaceContextCache: gcache.New(1000).LRU().
+			LoaderExpireFunc(func(namespace interface{}) (interface{}, *time.Duration, error) {
+				ttl := time.Hour
+				return &NamespaceContext{Type: "Game", StudioNamespace: namespace.(string)}, &ttl, nil
+			}).
+			Build(),
+	}
+
+	grantedPermission := Permission{
+		Resource: "NAMESPACE:studio1-:CLIENT",
+		Action:   1,
+	}
+	requiredPermission := Permission{
+		Resource: "NAMESPACE:{namespace}:CLIENT",
+		Action:   1,
+	}
+
+	userData := &tokenUserData{
+		UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Namespace:   "studio1",
+		Permissions: []Permission{grantedPermission},
+	}
+	claims := generateClaims(t, userData)
+
+	permissionResources := make(map[string]string)
+	permissionResources["{namespace}"] = userData.Namespace
+	validationResult, _ := mockClient.ValidatePermission(claims, requiredPermission, permissionResources)
+	assert.True(t, validationResult, "should valid")
+
+	userData = &tokenUserData{
+		UserID:      "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Namespace:   "studio",
+		Permissions: []Permission{grantedPermission},
+	}
+	claims = generateClaims(t, userData)
+
+	permissionResources["{namespace}"] = userData.Namespace
+	validationResult, _ = mockClient.ValidatePermission(claims, requiredPermission, permissionResources)
 	assert.False(t, validationResult, "should invalid")
 }
 
