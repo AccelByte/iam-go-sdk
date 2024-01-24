@@ -106,10 +106,8 @@ func (client *DefaultClient) resourceAllowed(accessPermissionResource string, re
 					if namespaceContext.NotFound {
 						return false
 					}
-					if namespaceContext.Type == NamespaceTypeGame {
-						if strings.HasPrefix(userSection, namespaceContext.StudioNamespace) {
-							continue
-						}
+					if namespaceContext.Type == NamespaceTypeGame && userSection == (namespaceContext.StudioNamespace+"-") {
+						continue
 					}
 				}
 			}
