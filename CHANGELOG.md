@@ -1,3 +1,8 @@
+Release v2.4.2 (2024-02-06)
+===========================
+### Modified
+1. Add `sp` to token claims
+
 Release v2.4.1 (2024-01-24)
 ===========================
 ### Modified
