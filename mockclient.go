@@ -26,6 +26,7 @@ const (
 	MockForbidden    = "forbidden"
 	MockAudience     = "http://example.com"
 	MockSecret       = "mocksecret"
+	ClientToken      = "mock_token"
 )
 
 // MockClient define mock oauth client config
@@ -48,7 +49,7 @@ func (client *MockClient) ClientTokenGrant(opts ...Option) error {
 
 // ClientToken returns client access token
 func (client *MockClient) ClientToken(opts ...Option) string {
-	return "mock_token"
+	return ClientToken
 }
 
 func (client *MockClient) DelegateToken(extendNamespace string, opts ...Option) (string, error) {
@@ -88,6 +89,11 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Opt
 	}
 
 	claims.Audience = append(claims.Audience, MockAudience)
+
+	// non user token will has empty Subject
+	if accessToken == ClientToken {
+		claims.Subject = ""
+	}
 
 	switch accessToken {
 	case MockUnauthorized:
