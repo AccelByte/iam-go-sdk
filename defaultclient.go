@@ -168,17 +168,13 @@ func NewDefaultClient(config *Config) *DefaultClient {
 	return client
 }
 
-func (client *DefaultClient) setKeysSafe(values map[string]*rsa.PublicKey) {
-	client.keysMutex.Lock()
-	defer client.keysMutex.Unlock()
-
-	client.keys = values
-}
-
 func (client *DefaultClient) setKeySafe(key string, value *rsa.PublicKey) {
 	client.keysMutex.Lock()
 	defer client.keysMutex.Unlock()
 
+	if len(client.keys) == 0 {
+		client.keys = make(map[string]*rsa.PublicKey)
+	}
 	client.keys[key] = value
 }
 
