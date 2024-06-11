@@ -147,8 +147,6 @@ func (client *DefaultClient) getJWKS(rootSpan opentracing.Span) error {
 		return errors.Wrap(err, "getJWKS: unable to unmarshal response body")
 	}
 
-	client.setKeysSafe(make(map[string]*rsa.PublicKey))
-
 	for i := range jwks.Keys {
 		jwk := &jwks.Keys[i]
 
