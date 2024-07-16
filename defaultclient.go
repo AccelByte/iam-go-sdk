@@ -17,6 +17,7 @@ package iam
 import (
 	"crypto/rsa"
 	"encoding/json"
+	gerror "errors"
 	"fmt"
 	"github.com/bluele/gcache"
 	"io/ioutil"
@@ -47,6 +48,7 @@ const (
 	revocationListPath    = "/v3/oauth/revocationlist"
 	verifyPath            = "/v3/oauth/verify"
 	getRolePath           = "/v3/admin/roles"
+	getNamespaceRolePath  = "/v3/admin/namespaces/%s/roleoverride/%s/permissions"
 	clientInformationPath = "/v3/admin/namespaces/%s/clients/%s"
 
 	defaultTokenRefreshRate              = 0.8
@@ -87,15 +89,16 @@ type DefaultClient struct {
 	revokedUsers      map[string]time.Time
 	revokedUsersMutex sync.RWMutex
 
-	tokenRefreshActive         atomic.Bool
-	localValidationActive      bool
-	jwksRefreshError           error
-	revocationListRefreshError error
-	tokenRefreshError          atomic.Error
-	remoteTokenValidation      func(accessToken string, span opentracing.Span) (bool, error)
-	clientInfoCache            *cache.Cache
-	delegateTokenCache         gcache.Cache
-	namespaceContextCache      gcache.Cache
+	tokenRefreshActive           atomic.Bool
+	localValidationActive        bool
+	jwksRefreshError             error
+	revocationListRefreshError   error
+	tokenRefreshError            atomic.Error
+	remoteTokenValidation        func(accessToken string, span opentracing.Span) (bool, error)
+	clientInfoCache              *cache.Cache
+	delegateTokenCache           gcache.Cache
+	namespaceContextCache        gcache.Cache
+	roleNamespacePermissionCache gcache.Cache
 	// for easily mocking the HTTP call
 	httpClient HTTPClient
 }
@@ -152,7 +155,7 @@ func NewDefaultClient(config *Config) *DefaultClient {
 		LoaderExpireFunc(func(namespace interface{}) (interface{}, *time.Duration, error) {
 			namespaceCtx, err := client.getNamespaceContext(namespace.(string))
 			ttl := time.Hour
-			if err == ErrNamespaceNotFound {
+			if gerror.Is(err, ErrNamespaceNotFound) {
 				ttl = time.Minute * 3
 				// by this way, these not found namespace can still have a short time cache
 				return &NamespaceContext{NotFound: true}, &ttl, nil
@@ -160,6 +163,22 @@ func NewDefaultClient(config *Config) *DefaultClient {
 			return namespaceCtx, &ttl, err
 		}).
 		Build()
+
+	client.roleNamespacePermissionCache = gcache.New(100).LRU().
+		LoaderExpireFunc(func(namespaceAndIdentity interface{}) (interface{}, *time.Duration, error) {
+			namespace, identity, err := extractRoleOverrideCacheKey(namespaceAndIdentity.(string))
+			if err != nil {
+				return nil, nil, err
+			}
+			reqSpan := jaeger.StartChildSpan(nil, "cache.getRoleNamespacePermission")
+			defer jaeger.Finish(reqSpan)
+			permissions, err := client.remoteGetRoleNamespacePermission(namespace, identity, reqSpan)
+			if err != nil {
+				return nil, nil, err
+			}
+			ttl := 1 * time.Minute
+			return permissions, &ttl, err
+		}).Build()
 
 	debug.Store(config.Debug)
 
@@ -421,6 +440,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 	for placeholder, value := range permissionResources {
 		requiredPermission.Resource = strings.Replace(requiredPermission.Resource, placeholder, value, 1)
 	}
+	targetNamespace, _ := permissionResources["{namespace}"]
 
 	if client.permissionAllowed(claims.Permissions, requiredPermission) {
 		log("ValidatePermission: permission allowed to access resource")
@@ -442,7 +462,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 					reqSpan := jaeger.StartChildSpan(span, "client.ValidatePermission.Retry")
 					defer jaeger.Finish(reqSpan)
 
-					grantedRolePermissions, e = client.getRolePermission(namespaceRole.RoleID, span)
+					grantedRolePermissions, e = client.GetRoleNamespacePermission(namespaceRole.Namespace, namespaceRole.RoleID, targetNamespace, span)
 					if e != nil {
 						switch errors.Cause(e) {
 						case errRoleNotFound:

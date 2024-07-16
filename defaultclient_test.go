@@ -137,6 +137,13 @@ func init() {
 		},
 		cache.DefaultExpiration)
 
+	testClient.roleNamespacePermissionCache.Set(buildRoleOverrideCacheKey("", defaultUserRole), []Permission{
+		{
+			Resource: "NAMESPACE:{namespace}:USER:{userId}:ORDER",
+			Action:   ActionCreate | ActionRead | ActionUpdate,
+		},
+	})
+
 	testClient.rolePermissionCache.Set(
 		mockUserRole,
 		[]Permission{
@@ -159,6 +166,15 @@ func init() {
 
 			return true, nil
 		}
+}
+
+func setRoleNamespacePermission(namespace, roleId string) {
+	testClient.roleNamespacePermissionCache.Set(buildRoleOverrideCacheKey(namespace, roleId), []Permission{
+		{
+			Resource: "NAMESPACE:{namespace}:USER:{userId}:ORDER",
+			Action:   ActionCreate | ActionRead | ActionUpdate,
+		},
+	})
 }
 
 func mustUnmarshalRSA(data string) *rsa.PrivateKey {
@@ -594,6 +610,8 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_ValidNamespaceRol
 				},
 			},
 		}
+		setRoleNamespacePermission("foo", defaultUserRole)
+		setRoleNamespacePermission("baz", defaultUserRole)
 		claims := generateClaims(t, userData)
 
 		permissionResources := make(map[string]string)
