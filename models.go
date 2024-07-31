@@ -125,6 +125,10 @@ type Role struct {
 	Permissions []Permission `json:"permissions"`
 }
 
+type RoleNamespacePermission struct {
+	Permissions []Permission `json:"permissions"`
+}
+
 type NamespaceRole struct {
 	RoleID    string `json:"roleId"`
 	Namespace string `json:"namespace"`

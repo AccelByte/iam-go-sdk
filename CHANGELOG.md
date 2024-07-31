@@ -1,3 +1,9 @@
+Release v2.5.0 (2024-07-25)
+===========================
+### Added
+1. Support role override permission feature
+2. This version depends on IAM version 7.20.0 and above (AGS version >=3.77 )
+
 Release v2.4.2 (2024-02-06)
 ===========================
 ### Modified
