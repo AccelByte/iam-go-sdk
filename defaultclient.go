@@ -488,9 +488,11 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 			return false, err
 		}
 
-		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims,
+		replacedGrantedRolePermissions := make([]Permission, len(grantedRolePermissions))
+		copy(replacedGrantedRolePermissions, grantedRolePermissions)
+		replacedGrantedRolePermissions = client.applyUserPermissionResourceValues(replacedGrantedRolePermissions, claims,
 			namespaceRole.Namespace)
-		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
+		if client.permissionAllowed(replacedGrantedRolePermissions, requiredPermission) {
 			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
 			log("ValidatePermission: permission allowed to access resource")
 
