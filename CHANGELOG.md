@@ -1,4 +1,4 @@
-Release v2.6.0 (2024-09-11)
+Release v2.5.1 (2024-09-11)
 ===========================
 ### Modified
 1. Fix permission issue in v2.5.0
