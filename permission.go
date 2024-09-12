@@ -362,7 +362,10 @@ func (client *DefaultClient) GetRoleNamespacePermission(namespace, roleID, reque
 		if err != nil {
 			return nil, errors.Wrap(err, "GetRoleNamespacePermission: unable to get role permissions")
 		}
-		return permissions.([]Permission), nil
+		rolePermissions := make([]Permission, len(permissions.([]Permission)))
+		_ = copy(rolePermissions, permissions.([]Permission))
+
+		return rolePermissions, nil
 	}
 skipRoleOverride:
 	return client.getRolePermission(roleID, span)
