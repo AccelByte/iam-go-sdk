@@ -18,8 +18,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
-	"github.com/bluele/gcache"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -27,6 +26,7 @@ import (
 
 	"github.com/AccelByte/bloom"
 	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
+	"github.com/bluele/gcache"
 	"github.com/cenkalti/backoff"
 	"github.com/opentracing/opentracing-go"
 	"github.com/patrickmn/go-cache"
@@ -240,7 +240,6 @@ func (client *DefaultClient) ClientTokenGrant(opts ...Option) error {
 func (client *DefaultClient) ClientToken(opts ...Option) string {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ClientToken")
-
 	defer jaeger.Finish(span)
 
 	return client.clientAccessToken.Load()
@@ -407,7 +406,8 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...
 //
 // nolint: funlen
 func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
-	requiredPermission Permission, permissionResources map[string]string, opts ...Option) (bool, error) {
+	requiredPermission Permission, permissionResources map[string]string, opts ...Option,
+) (bool, error) {
 	options := processOptions(opts)
 	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
 
@@ -852,7 +852,7 @@ func (client *DefaultClient) fetchClientInformation(namespace string, clientID s
 					return errors.Wrap(errUnauthorized, "getClientInformation: unauthorized")
 				}
 
-				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				responseBodyBytes, e = io.ReadAll(resp.Body)
 				if e != nil {
 					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
 					return errors.Wrap(e, "getClientInformation: unable to read body response")
@@ -862,7 +862,6 @@ func (client *DefaultClient) fetchClientInformation(namespace string, clientID s
 			},
 			b,
 		)
-
 	if err != nil {
 		jaeger.TraceError(span, errors.Wrap(err, "getClientInformation: unable to do HTTP request"))
 		return nil, errors.Wrap(err, "getClientInformation: unable to do HTTP request")

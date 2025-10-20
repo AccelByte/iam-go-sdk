@@ -1,4 +1,4 @@
-// Copyright 2018 AccelByte Inc
+// Copyright 2018-2025 AccelByte Inc
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -174,8 +174,10 @@ type UserRevocationListRecord struct {
 
 // JWTBan holds information about ban record in JWT
 type JWTBan struct {
-	Ban     string    `json:"Ban"`
-	EndDate time.Time `json:"EndDate"`
+	Ban               string    `json:"Ban"`
+	EndDate           time.Time `json:"EndDate"`
+	Enabled           bool      `json:"Enabled"`
+	TargetedNamespace string    `json:"TargetedNamespace"`
 }
 
 // ClientInformation holds client information
