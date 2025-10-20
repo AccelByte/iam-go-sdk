@@ -181,7 +181,7 @@ type JWTBan struct {
 	Ban               string    `json:"Ban"`
 	EndDate           time.Time `json:"EndDate"`
 	Enabled           bool      `json:"Enabled"`
-	TargetedNamespace string    `json:"TargetedNamespace"`
+	TargetedNamespace string    `json:"TargetedNamespace,omitempty"`
 }
 
 // ClientInformation holds client information
