@@ -21,7 +21,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"github.com/bluele/gcache"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -32,6 +31,7 @@ import (
 	jose "github.com/AccelByte/go-jose"
 	"github.com/AccelByte/go-jose/jwt"
 	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
+	"github.com/bluele/gcache"
 	"github.com/google/uuid"
 	"github.com/opentracing/opentracing-go"
 	cache "github.com/patrickmn/go-cache"
@@ -1034,7 +1034,7 @@ func Test_DefaultClientHasBan(t *testing.T) {
 
 	userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 	claims := generateClaims(t, userData)
-	claims.Bans = append(claims.Bans, JWTBan{Ban: "TEST_BAN"})
+	claims.Bans = append(claims.Bans, JWTBan{Ban: "TEST_BAN", EndDate: time.Now().Add(time.Hour), Enabled: true, TargetedNamespace: "gameNamespace"})
 
 	assert.True(t, testClient.HasBan(claims, "TEST_BAN"), "ban not found")
 
