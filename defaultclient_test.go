@@ -1,4 +1,4 @@
-// Copyright 2018-2021 AccelByte Inc
+// Copyright 2018-2025 AccelByte Inc
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -1548,4 +1548,59 @@ type httpClientMock struct {
 
 func (c *httpClientMock) Do(req *http.Request) (*http.Response, error) {
 	return c.doMock(req)
+}
+
+func TestDefaultClient_IsSubscribed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("TestDefaultClient_IsSubscribed_With_Nil_ClaimSubscriptions_Success", func(t *testing.T) {
+		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
+		claims := generateClaims(t, userData)
+		claims.Subscriptions = nil
+
+		//validate empty claims.subscriptions and empty subscription
+		assert.True(t, testClient.IsSubscribed(claims, ""), "claims.subscriptions is nil considered valid")
+
+		//validate empty claims.subscriptions and valid subscription
+		assert.True(t, testClient.IsSubscribed(claims, "online"), "claims.subscriptions is nil considered valid")
+	})
+
+	t.Run("TestDefaultClient_IsSubscribed_With_Empty_ClaimSubscriptions_Fail", func(t *testing.T) {
+		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
+		claims := generateClaims(t, userData)
+		claims.Subscriptions = []string{}
+
+		//validate empty claims.subscriptions and empty subscription
+		assert.False(t, testClient.IsSubscribed(claims, ""), "given subscription is empty")
+
+		//validate empty claims.subscriptions and valid subscription
+		assert.False(t, testClient.IsSubscribed(claims, "online"), "given subscription is not found")
+
+	})
+
+	t.Run("TestDefaultClient_IsSubscribed_With_Populated_ClaimSubscriptions_Success", func(t *testing.T) {
+		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
+		claims := generateClaims(t, userData)
+		claims.Subscriptions = []string{"foundations", "multiplayer", "online"}
+
+		assert.True(t, testClient.IsSubscribed(claims, "online"), "subscription is found")
+
+		assert.True(t, testClient.IsSubscribed(claims, "ONLINE"), "subscription is found")
+
+		assert.True(t, testClient.IsSubscribed(claims, "Online"), "subscription is found")
+	})
+
+	t.Run("TestDefaultClient_IsSubscribed_With_Populated_ClaimSubscriptions_Fail", func(t *testing.T) {
+		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
+		claims := generateClaims(t, userData)
+		claims.Subscriptions = []string{"foundations", "multiplayer"}
+
+		assert.False(t, testClient.IsSubscribed(claims, ""), "subscription is not found")
+
+		assert.False(t, testClient.IsSubscribed(claims, "online"), "subscription is not found")
+
+		assert.False(t, testClient.IsSubscribed(claims, "ONLINE"), "subscription is not found")
+
+		assert.False(t, testClient.IsSubscribed(claims, "Online"), "subscription is not found")
+	})
 }

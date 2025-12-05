@@ -1,4 +1,4 @@
-// Copyright 2018 AccelByte Inc
+// Copyright 2018-2025 AccelByte Inc
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -905,4 +905,27 @@ func (client *DefaultClient) fetchClientInformation(namespace string, clientID s
 	}
 
 	return &clientInformation, nil
+}
+
+// IsSubscribed checks if the user has the specified subscription.
+// If claims.Subscriptions is nil, it means there are no subscription restrictions and validation is skipped (returns true).
+// If claims.Subscriptions is an empty slice or the subscription is not found, validation will fail (return false).
+func (client *DefaultClient) IsSubscribed(claims *JWTClaims, subscription string, opts ...Option) bool {
+	options := processOptions(opts)
+	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.IsSubscribed")
+
+	defer jaeger.Finish(span)
+
+	if claims.Subscriptions == nil {
+		log("IsSubscribed: subscriptions is nil, skipping validation (no subscription restrictions)")
+		return true
+	}
+
+	for _, claimSub := range claims.Subscriptions {
+		if strings.EqualFold(claimSub, subscription) {
+			return true
+		}
+	}
+
+	return false
 }

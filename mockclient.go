@@ -1,4 +1,4 @@
-// Copyright 2018 AccelByte Inc
+// Copyright 2018-2025 AccelByte Inc
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@ package iam
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/AccelByte/go-jose/jwt"
+	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
 )
 
 // Mock IAM constants
@@ -218,4 +220,27 @@ func (client *MockClient) GetClientInformation(namespace string, clientID string
 		"http://127.0.0.1",
 	}
 	return clientInfo, nil
+}
+
+// IsSubscribed checks if the user has the specified subscription.
+// If claims.Subscriptions is nil, it means there are no subscription restrictions and validation is skipped (returns true).
+// If claims.Subscriptions is an empty slice or the subscription is not found, validation will fail (return false).
+func (client *MockClient) IsSubscribed(claims *JWTClaims, subscription string, opts ...Option) bool {
+	options := processOptions(opts)
+	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.IsSubscribed")
+
+	defer jaeger.Finish(span)
+
+	if claims.Subscriptions == nil {
+		log("IsSubscribed: subscriptions is nil, skipping validation (no subscription restrictions)")
+		return true
+	}
+
+	for _, claimSub := range claims.Subscriptions {
+		if strings.EqualFold(claimSub, subscription) {
+			return true
+		}
+	}
+
+	return false
 }
