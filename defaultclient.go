@@ -250,8 +250,6 @@ func (client *DefaultClient) ClientTokenGrant(opts ...Option) error {
 		client.spawnRefreshAccessTokenScheduler(span)
 	}()
 
-	log("ClientTokenGrant: token grant success")
-
 	return nil
 }
 
@@ -310,8 +308,6 @@ func (client *DefaultClient) StartLocalValidation(opts ...Option) error {
 
 	client.localValidationActive = true
 
-	log("StartLocalValidation: local validation activated")
-
 	return nil
 }
 
@@ -353,10 +349,6 @@ func (client *DefaultClient) ValidateAccessToken(accessToken string, opts ...Opt
 	err = logAndReturnErr(
 		errors.WithMessage(err,
 			"ValidateAccessToken: unable to validate token"))
-
-	if isValid {
-		log("ValidateAccessToken: token is valid")
-	}
 
 	return isValid, err
 }
@@ -409,8 +401,6 @@ func (client *DefaultClient) ValidateAndParseClaims(accessToken string, opts ...
 		return nil, err
 	}
 
-	log("ValidateAndParseClaims: JWT validated")
-
 	return claims, nil
 }
 
@@ -443,7 +433,6 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 	targetNamespace, _ := permissionResources["{namespace}"]
 
 	if client.permissionAllowed(claims.Permissions, requiredPermission) {
-		log("ValidatePermission: permission allowed to access resource")
 		return true, nil
 	}
 
@@ -492,7 +481,6 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 			namespaceRole.Namespace)
 		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
 			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
-			log("ValidatePermission: permission allowed to access resource")
 
 			return true, nil
 		}
@@ -540,14 +528,12 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims, "")
 		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
 			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
-			log("ValidatePermission: permission allowed to access resource")
 
 			return true, nil
 		}
 	}
 
 	jaeger.AddLog(span, "msg", "ValidatePermission: permission not allowed to access resource")
-	log("ValidatePermission: permission not allowed to access resource")
 
 	return false, nil
 }
@@ -561,12 +547,9 @@ func (client *DefaultClient) ValidateRole(requiredRoleID string, claims *JWTClai
 
 	for _, grantedRoleID := range claims.Roles {
 		if grantedRoleID == requiredRoleID {
-			log("ValidateRole: role allowed to access resource")
 			return true, nil
 		}
 	}
-
-	log("ValidateRole: role not allowed to access resource")
 
 	return false, nil
 }
@@ -622,12 +605,9 @@ func (client *DefaultClient) HasBan(claims *JWTClaims, banType string, opts ...O
 
 	for _, ban := range claims.Bans {
 		if ban.Ban == banType {
-			log("HasBan: user banned")
 			return true
 		}
 	}
-
-	log("HasBan: user not banned")
 
 	return false
 }
@@ -660,8 +640,6 @@ func (client *DefaultClient) HealthCheck(opts ...Option) bool {
 		)
 		return false
 	}
-
-	log("HealthCheck: all OK")
 
 	return true
 }
@@ -713,8 +691,6 @@ func (client *DefaultClient) ValidateAudience(claims *JWTClaims, opts ...Option)
 				"ValidateAudience: audience is not valid"))
 	}
 
-	log("ValidateAudience: audience is valid")
-
 	return nil
 }
 
@@ -745,8 +721,6 @@ func (client *DefaultClient) ValidateScope(claims *JWTClaims, reqScope string, o
 			errInvalidScope,
 			"ValidateScope: invalid scope"))
 	}
-
-	log("ValidateScope: scope valid")
 
 	return nil
 }
@@ -866,7 +840,6 @@ func (client *DefaultClient) fetchClientInformation(namespace string, clientID s
 					jaeger.TraceError(span, errors.Wrap(errUnauthorized, "getClientInformation: unauthorized"))
 
 					// refresh the client accessToken
-					log("fetchClientInformation: refresh client token")
 					_, _ = client.refreshAccessToken(reqSpan)
 
 					return errors.Wrap(errUnauthorized, "getClientInformation: unauthorized")
@@ -917,7 +890,6 @@ func (client *DefaultClient) IsSubscribed(claims *JWTClaims, subscription string
 	defer jaeger.Finish(span)
 
 	if claims.Subscriptions == nil {
-		log("IsSubscribed: subscriptions is nil, skipping validation (no subscription restrictions)")
 		return true
 	}
 
