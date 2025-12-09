@@ -1,4 +1,4 @@
-// Copyright 2018 AccelByte Inc
+// Copyright 2018-2025 AccelByte Inc
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -96,6 +96,20 @@ type Client interface {
 	// GetClientInformation gets IAM client information,
 	// it will look into cache first, if not found then fetch it to IAM.
 	GetClientInformation(namespace string, clientID string, opts ...Option) (*ClientInformation, error)
+
+	// IsSubscribe checks whether a subscription exists in claims.Subscriptions.
+	//
+	// subscription: the subscription name to check.
+	// claims.Subscriptions: list of existing subscriptions.
+	//
+	// Returns true if:
+	// - claims.Subscriptions is nil (skip validation), or
+	// - subscription exists in claims.Subscriptions.
+	//
+	// Returns false if:
+	// - subscription is empty or
+	// - subscription does not exist in claims.Subscriptions.
+	IsSubscribed(claims *JWTClaims, subscription string, opts ...Option) bool
 }
 
 type Options struct {

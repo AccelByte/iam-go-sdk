@@ -154,6 +154,15 @@ type JWTClaims struct {
 	UnionID              string          `json:"union_id,omitempty"`
 	UnionNamespace       string          `json:"union_namespace,omitempty"`
 	ExtendNamespace      string          `json:"extend_namespace,omitempty"`
+	// Subscriptions represents the list of subscriptions assigned to a user.
+	// Example values: ["foundations", "online", "multiplayer", ...].
+	//
+	// Possible states of `subs`:
+	// - nil: no subscription data provided. Subscription checks are skipped and treated as valid.
+	// - empty slice ([]): user explicitly has no subscriptions. Validation must check and reject if a required subscription is not present.
+	// - populated slice (e.g. ["foundations", "online"]): user has these subscriptions. Validation must ensure the required subscription exists.
+	Subscriptions []string `json:"subs,omitempty"`
+
 	jwt.Claims
 }
 
