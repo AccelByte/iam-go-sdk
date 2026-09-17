@@ -151,9 +151,17 @@ type JWTClaims struct {
 	IssuedPlatformFrom   string          `json:"ipf,omitempty"`
 	IssuedPlatformOn     string          `json:"ipo,omitempty"`
 	SimultaneousPlatform string          `json:"sp,omitempty"`
-	UnionID              string          `json:"union_id,omitempty"`
-	UnionNamespace       string          `json:"union_namespace,omitempty"`
-	ExtendNamespace      string          `json:"extend_namespace,omitempty"`
+	// PlatformAppID is the application ID on the platform named by IssuedPlatformFrom (`ipf`),
+	// e.g. the Steam App ID the login was authenticated against when `ipf` is `steam`.
+	//
+	// It is set on every platform login that resolves an application ID, regardless of whether the
+	// namespace uses multiple app IDs: IAM mints either the app ID sent on the request or the one
+	// configured on the third party credential. It is empty for logins with no platform application
+	// involved, such as non-platform or client credentials logins.
+	PlatformAppID   string `json:"pa_id,omitempty"`
+	UnionID         string `json:"union_id,omitempty"`
+	UnionNamespace  string `json:"union_namespace,omitempty"`
+	ExtendNamespace string `json:"extend_namespace,omitempty"`
 	// Subscriptions represents the list of subscriptions assigned to a user.
 	// Example values: ["foundations", "online", "multiplayer", ...].
 	//

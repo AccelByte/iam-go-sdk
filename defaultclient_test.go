@@ -433,6 +433,46 @@ func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
 	assert.ElementsMatch(t, userData.Permissions, claims.Permissions)
 }
 
+func Test_DefaultClientValidateAndParseClaims_PlatformAppID(t *testing.T) {
+	t.Parallel()
+
+	userData := &tokenUserData{
+		UserID:    "e9b1ed0c1a3d473cd970abc845b51d3a",
+		Namespace: "testnamespace1234",
+	}
+
+	// the platform claims are minted by IAM, so build the token from the raw claim
+	// names instead of the struct to pin the wire format
+	platformClaims := map[string]interface{}{
+		"ipf":   "steam",
+		"pa_id": "1234567",
+	}
+
+	accessToken, err := jwt.Signed(signer).
+		Claims(generateClaims(t, userData)).
+		Claims(platformClaims).
+		CompactSerialize()
+	require.NoError(t, err)
+
+	claims, err := testClient.ValidateAndParseClaims(accessToken)
+
+	require.NoError(t, err, "access token is invalid")
+	require.NotNil(t, claims, "claims should not nil")
+	assert.Equal(t, "steam", claims.IssuedPlatformFrom, "ipf should be parsed")
+	assert.Equal(t, "1234567", claims.PlatformAppID, "pa_id should be parsed into PlatformAppID")
+
+	// a token minted without the claim, e.g. a non-platform login or a token older
+	// than the claim itself, leaves the field empty rather than failing validation
+	accessTokenWithoutAppID, err := jwt.Signed(signer).Claims(generateClaims(t, userData)).CompactSerialize()
+	require.NoError(t, err)
+
+	claims, err = testClient.ValidateAndParseClaims(accessTokenWithoutAppID)
+
+	require.NoError(t, err, "access token is invalid")
+	require.NotNil(t, claims, "claims should not nil")
+	assert.Empty(t, claims.PlatformAppID, "PlatformAppID should be empty when the token carries no pa_id claim")
+}
+
 func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
 	t.Parallel()
 
