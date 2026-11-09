@@ -1,4 +1,4 @@
-Release v2.9.0 (unreleased)
+Release v2.9.0 (2026-11-09)
 ===========================
 ### Added
 1. `WithContext(ctx)` option, which sets the parent context for the client's tracing spans
