@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/AccelByte/go-jose/jwt"
-	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
+	"github.com/AccelByte/iam-go-sdk/v2/internal/tracing"
 )
 
 // Mock IAM constants
@@ -28,6 +28,10 @@ const (
 	MockForbidden    = "forbidden"
 	MockAudience     = "http://example.com"
 	MockSecret       = "mocksecret"
+
+	mockNamespace   = "MOCK"
+	mockResource    = "MOCK"
+	mockRedirectURI = "http://127.0.0.1"
 )
 
 // MockClient define mock oauth client config
@@ -77,7 +81,7 @@ func (client *MockClient) ValidateAccessToken(accessToken string, opts ...Option
 func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Option) (*JWTClaims, error) {
 	claims := &JWTClaims{
 		Claims:    jwt.Claims{Subject: accessToken},
-		Namespace: "MOCK",
+		Namespace: mockNamespace,
 	}
 
 	// extract mock access token
@@ -104,7 +108,7 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Opt
 
 	claims.Roles = append(claims.Roles, MockForbidden)
 	claims.Permissions = append(claims.Permissions,
-		Permission{Resource: "MOCK", Action: ActionCreate | ActionRead | ActionUpdate | ActionDelete})
+		Permission{Resource: mockResource, Action: ActionCreate | ActionRead | ActionUpdate | ActionDelete})
 
 	return claims, nil
 }
@@ -118,7 +122,8 @@ func (client *MockClient) ValidateAndParseClaims(accessToken string, opts ...Opt
 //
 //	`requiredPermission`, example: p["{namespace}"] = "accelbyte"
 func (client *MockClient) ValidatePermission(claims *JWTClaims,
-	requiredPermission Permission, permissionResources map[string]string, opts ...Option) (bool, error) {
+	requiredPermission Permission, permissionResources map[string]string, opts ...Option,
+) (bool, error) {
 	if claims.Permissions[0].Resource == MockForbidden {
 		return false, nil
 	}
@@ -207,7 +212,7 @@ func (client *MockClient) GetRolePermissions(roleID string, opts ...Option) (per
 
 // GetClientInformation gets IAM client information
 func (client *MockClient) GetClientInformation(namespace string, clientID string, opts ...Option) (clientInfo *ClientInformation, err error) {
-	redirectURI := "http://127.0.0.1"
+	redirectURI := mockRedirectURI
 
 	if client.RedirectURI != "" {
 		redirectURI = client.RedirectURI
@@ -217,7 +222,7 @@ func (client *MockClient) GetClientInformation(namespace string, clientID string
 		"client-1",
 		namespace,
 		redirectURI,
-		"http://127.0.0.1",
+		mockRedirectURI,
 	}
 	return clientInfo, nil
 }
@@ -227,9 +232,9 @@ func (client *MockClient) GetClientInformation(namespace string, clientID string
 // If claims.Subscriptions is an empty slice or the subscription is not found, validation will fail (return false).
 func (client *MockClient) IsSubscribed(claims *JWTClaims, subscription string, opts ...Option) bool {
 	options := processOptions(opts)
-	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.IsSubscribed")
+	span, _ := tracing.StartSpanFromContext(options.traceCtx, "client.IsSubscribed")
 
-	defer jaeger.Finish(span)
+	defer tracing.Finish(span)
 
 	if claims.Subscriptions == nil {
 		log("IsSubscribed: subscriptions is nil, skipping validation (no subscription restrictions)")

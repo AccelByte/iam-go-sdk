@@ -15,18 +15,19 @@
 package iam
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/sirupsen/logrus"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 
-	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
+	"github.com/AccelByte/iam-go-sdk/v2/internal/tracing"
 	"github.com/cenkalti/backoff"
 	"github.com/opentracing/opentracing-go"
 	"github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -52,7 +53,8 @@ func (client *DefaultClient) permissionAllowed(grantedPermissions []Permission, 
 }
 
 func (client *DefaultClient) applyUserPermissionResourceValues(
-	grantedPermissions []Permission, claims *JWTClaims, allowedNamespace string) []Permission {
+	grantedPermissions []Permission, claims *JWTClaims, allowedNamespace string,
+) []Permission {
 	if allowedNamespace == "" {
 		allowedNamespace = claims.Namespace
 	}
@@ -150,10 +152,10 @@ func (client *DefaultClient) actionAllowed(grantedAction int, requiredAction int
 	return grantedAction&requiredAction == requiredAction
 }
 
-// nolint: funlen, dupl
+//nolint:funlen,dupl
 func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentracing.Span) ([]Permission, error) {
-	span := jaeger.StartChildSpan(rootSpan, "client.getRolePermission")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.getRolePermission")
+	defer tracing.Finish(span)
 
 	if cachedRolePermission, found := client.rolePermissionCache.Get(roleID); found {
 		rolePermissions := make([]Permission, len(cachedRolePermission.([]Permission)))
@@ -162,7 +164,7 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 		return rolePermissions, nil
 	}
 
-	req, err := http.NewRequest("GET", client.config.BaseURL+getRolePath+"/"+roleID, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, client.config.BaseURL+getRolePath+"/"+roleID, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "getRolePermission: unable to create new HTTP request")
 	}
@@ -180,9 +182,9 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 	err = backoff.
 		Retry(
 			func() error {
-				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
-				defer jaeger.Finish(reqSpan)
-				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
+				reqSpan := tracing.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer tracing.Finish(reqSpan)
+				jErr := tracing.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
@@ -193,13 +195,13 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
-					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
+					tracing.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return errors.Errorf("getRolePermission: endpoint returned status code : %v", responseStatusCode)
 				}
 
-				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				responseBodyBytes, e = io.ReadAll(resp.Body)
 				if e != nil {
-					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					tracing.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
 					return errors.Wrap(e, "getRolePermission: unable to read response body")
 				}
 
@@ -207,9 +209,8 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 			},
 			b,
 		)
-
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "getRolePermission: unable to do HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "getRolePermission: unable to do HTTP request"))
 		return nil, errors.Wrap(err, "getRolePermission: unable to do HTTP request")
 	}
 
@@ -217,16 +218,16 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 	case http.StatusOK:
 		// do nothing
 	case http.StatusUnauthorized:
-		jaeger.TraceError(span, errors.Wrap(errUnauthorized, "getRolePermission: unauthorized"))
+		tracing.TraceError(span, errors.Wrap(errUnauthorized, "getRolePermission: unauthorized"))
 		return nil, errors.Wrap(errUnauthorized, "getRolePermission: unauthorized")
 	case http.StatusForbidden:
-		jaeger.TraceError(span, errors.Wrap(errForbidden, "getRolePermission: forbidden"))
+		tracing.TraceError(span, errors.Wrap(errForbidden, "getRolePermission: forbidden"))
 		return nil, errors.Wrap(errForbidden, "getRolePermission: forbidden")
 	case http.StatusNotFound:
-		jaeger.TraceError(span, errors.Wrap(errRoleNotFound, "getRolePermission: not found"))
+		tracing.TraceError(span, errors.Wrap(errRoleNotFound, "getRolePermission: not found"))
 		return nil, errors.Wrap(errRoleNotFound, "getRolePermission: not found")
 	default:
-		jaeger.TraceError(span, errors.New("unexpected error: "+http.StatusText(responseStatusCode)))
+		tracing.TraceError(span, errors.New("unexpected error: "+http.StatusText(responseStatusCode)))
 		return nil, errors.New("unexpected error: " + http.StatusText(responseStatusCode))
 	}
 
@@ -234,7 +235,7 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 
 	err = json.Unmarshal(responseBodyBytes, &role)
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "getRolePermission: unable to unmarshal response body"))
+		tracing.TraceError(span, errors.Wrap(err, "getRolePermission: unable to unmarshal response body"))
 		return nil, errors.Wrap(err, "getRolePermission: unable to unmarshal response body")
 	}
 
@@ -258,12 +259,12 @@ func extractRoleOverrideCacheKey(cacheKey string) (namespace, roleId string, err
 	return namespaceAndRoleId[0], namespaceAndRoleId[1], nil
 }
 
-// nolint: funlen, dupl
+//nolint:funlen,dupl
 func (client *DefaultClient) remoteGetRoleNamespacePermission(namespace, roleID string, rootSpan opentracing.Span) ([]Permission, error) {
-	span := jaeger.StartChildSpan(rootSpan, "client.remoteGetRoleNamespacePermission")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.remoteGetRoleNamespacePermission")
+	defer tracing.Finish(span)
 
-	req, err := http.NewRequest("GET", fmt.Sprintf(client.config.BaseURL+getNamespaceRolePath, namespace, roleID), nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fmt.Sprintf(client.config.BaseURL+getNamespaceRolePath, namespace, roleID), nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "remoteGetRoleNamespacePermission: unable to create new HTTP request")
 	}
@@ -281,9 +282,9 @@ func (client *DefaultClient) remoteGetRoleNamespacePermission(namespace, roleID 
 	err = backoff.
 		Retry(
 			func() error {
-				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
-				defer jaeger.Finish(reqSpan)
-				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
+				reqSpan := tracing.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer tracing.Finish(reqSpan)
+				jErr := tracing.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
@@ -294,13 +295,13 @@ func (client *DefaultClient) remoteGetRoleNamespacePermission(namespace, roleID 
 
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
-					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
+					tracing.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return errors.Errorf("remoteGetRoleNamespacePermission: endpoint returned status code : %v", responseStatusCode)
 				}
 
-				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				responseBodyBytes, e = io.ReadAll(resp.Body)
 				if e != nil {
-					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					tracing.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
 					return errors.Wrap(e, "remoteGetRoleNamespacePermission: unable to read response body")
 				}
 
@@ -308,9 +309,8 @@ func (client *DefaultClient) remoteGetRoleNamespacePermission(namespace, roleID 
 			},
 			b,
 		)
-
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "remoteGetRoleNamespacePermission: unable to do HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "remoteGetRoleNamespacePermission: unable to do HTTP request"))
 		return nil, errors.Wrap(err, "remoteGetRoleNamespacePermission: unable to do HTTP request")
 	}
 
@@ -318,16 +318,16 @@ func (client *DefaultClient) remoteGetRoleNamespacePermission(namespace, roleID 
 	case http.StatusOK:
 		// do nothing
 	case http.StatusUnauthorized:
-		jaeger.TraceError(span, errors.Wrap(errUnauthorized, "remoteGetRoleNamespacePermission: unauthorized"))
+		tracing.TraceError(span, errors.Wrap(errUnauthorized, "remoteGetRoleNamespacePermission: unauthorized"))
 		return nil, errors.Wrap(errUnauthorized, "remoteGetRoleNamespacePermission: unauthorized")
 	case http.StatusForbidden:
-		jaeger.TraceError(span, errors.Wrap(errForbidden, "remoteGetRoleNamespacePermission: forbidden"))
+		tracing.TraceError(span, errors.Wrap(errForbidden, "remoteGetRoleNamespacePermission: forbidden"))
 		return nil, errors.Wrap(errForbidden, "remoteGetRoleNamespacePermission: forbidden")
 	case http.StatusNotFound:
-		jaeger.TraceError(span, errors.Wrap(errRoleNotFound, "remoteGetRoleNamespacePermission: not found"))
+		tracing.TraceError(span, errors.Wrap(errRoleNotFound, "remoteGetRoleNamespacePermission: not found"))
 		return nil, errors.Wrap(errRoleNotFound, "remoteGetRoleNamespacePermission: not found")
 	default:
-		jaeger.TraceError(span, errors.New("unexpected error: "+http.StatusText(responseStatusCode)))
+		tracing.TraceError(span, errors.New("unexpected error: "+http.StatusText(responseStatusCode)))
 		return nil, errors.New("unexpected error: " + http.StatusText(responseStatusCode))
 	}
 
@@ -335,7 +335,7 @@ func (client *DefaultClient) remoteGetRoleNamespacePermission(namespace, roleID 
 
 	err = json.Unmarshal(responseBodyBytes, &namespacePermission)
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "remoteGetRoleNamespacePermission: unable to unmarshal response body"))
+		tracing.TraceError(span, errors.Wrap(err, "remoteGetRoleNamespacePermission: unable to unmarshal response body"))
 		return nil, errors.Wrap(err, "remoteGetRoleNamespacePermission: unable to unmarshal response body")
 	}
 
@@ -344,10 +344,10 @@ func (client *DefaultClient) remoteGetRoleNamespacePermission(namespace, roleID 
 	return rolePermissions, nil
 }
 
-// nolint: funlen, dupl
+//nolint:funlen,dupl
 func (client *DefaultClient) GetRoleNamespacePermission(namespace, roleID, requestNamespace string, rootSpan opentracing.Span) ([]Permission, error) {
-	span := jaeger.StartChildSpan(rootSpan, "client.GetRoleNamespacePermission")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.GetRoleNamespacePermission")
+	defer tracing.Finish(span)
 
 	if roleID == DefaultUserRoleID {
 		queryNS := namespace

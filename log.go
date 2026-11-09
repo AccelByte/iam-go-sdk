@@ -39,7 +39,7 @@ func logErr(err error, s ...interface{}) {
 	fmt.Printf("%+v\n", err)
 }
 
-// nolint: unparam
+//nolint:unparam
 func logAndReturnErr(err error, s ...interface{}) error {
 	logErr(err, s...)
 	return err

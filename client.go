@@ -113,15 +113,28 @@ type Client interface {
 }
 
 type Options struct {
-	jaegerCtx context.Context
+	traceCtx context.Context
 }
 
 type Option func(*Options)
 
-func WithJaegerContext(ctx context.Context) Option {
+// WithContext sets the context whose OpenTracing span becomes the parent of the
+// spans the client creates for the call. Spans are recorded only if the
+// application has registered a tracer with opentracing.SetGlobalTracer.
+//
+// The context is used only for tracing. It doesn't cancel or time out the
+// client's requests.
+func WithContext(ctx context.Context) Option {
 	return func(o *Options) {
-		o.jaegerCtx = ctx
+		o.traceCtx = ctx
 	}
+}
+
+// WithJaegerContext is the previous name of WithContext and behaves the same.
+//
+// Deprecated: Use WithContext. The option isn't specific to Jaeger.
+func WithJaegerContext(ctx context.Context) Option {
+	return WithContext(ctx)
 }
 
 func processOptions(opts []Option) *Options {

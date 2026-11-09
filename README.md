@@ -124,32 +124,18 @@ You can check the health with:
 client.HealthCheck()
 ```
 
-## Jaeger tracing
+## Tracing
 
-The IAM service client supports Opentracing Jaeger Traces in Zipkin B3 format (multiple headers mode). Additionally, the client handles K8s Istio traces and includes them into outbound calls.
+The client creates [OpenTracing](https://github.com/opentracing/opentracing-go) spans through `opentracing.GlobalTracer()` and, where a call has a span, injects the span context into the request it sends to IAM. It doesn't configure a tracer itself:
 
-### Configure Jaeger tracing
+- If the application registers an OpenTracing tracer with `opentracing.SetGlobalTracer`, the client's spans are recorded by it, and the header format is whatever that tracer uses.
+- If no tracer is registered, the spans are no-ops.
 
-To configure the Jaegeer client, provide the Jaeger Agent `host:port` or the Jaeger Collector URL and set up the global tracer:
+The parent span comes from the OpenTracing span in the context passed with `WithContext` (see `opentracing.ContextWithSpan`). The client can't see an OpenTelemetry span in that context, so in an application traced with OpenTelemetry its spans start new traces unless the context also carries an OpenTracing span.
 
-```go
-/*
-func InitGlobalTracer(
-    jaegerAgentHost string,
-    jaegerCollectorEndpoint string,
-    serviceName string,
-    realm string,
-)
-*/
+### Tracing usage
 
-jaeger.InitGlobalTracer(jaegerAgentHost, "", "service-name", "node-name")
-// or
-jaeger.InitGlobalTracer("", jaegerCollectorURL, "service-name", "node-name")
-```
-
-### Jaeger tracing usage
-
-Use API methods received from the response context:
+Pass the request context with `WithContext` so the client's spans become children of the OpenTracing span in it. The context is used only for tracing: it doesn't cancel or time out the client's requests. `WithJaegerContext` is a deprecated alias of `WithContext` and still works:
 
 ```go
 // instead of 
@@ -164,14 +150,14 @@ validationResult, err := testClient.ValidatePermission(
     claims,
     requiredPermission,
     permissionResources,
-    WithJaegerContext(ctx),
+    WithContext(ctx),
 )
 
-// or an empty context to start a new Jaeger Span
+// or an empty context to start a new span
 validationResult, err := testClient.ValidatePermission(
     claims,
     requiredPermission,
     permissionResources,
-    WithJaegerContext(context.Background()),
+    WithContext(context.Background()),
 )
 ```
