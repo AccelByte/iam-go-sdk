@@ -15,14 +15,15 @@
 package iam
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/AccelByte/bloom"
-	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
+	"github.com/AccelByte/iam-go-sdk/v2/internal/tracing"
 	"github.com/cenkalti/backoff"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -43,15 +44,17 @@ func (client *DefaultClient) putRevocationFilterSafe(data []byte) {
 }
 
 func (client *DefaultClient) refreshRevocationList(rootSpan opentracing.Span) {
-	span := jaeger.StartChildSpan(rootSpan, "client.refreshJWKS")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.refreshRevocationList")
+	defer tracing.Finish(span)
 
 	time.Sleep(client.config.RevocationListRefreshInterval)
 	backOffTime := time.Second
 
 	for {
-		client.revocationListRefreshError = client.getRevocationList(span)
-		if client.revocationListRefreshError != nil {
+		err := client.getRevocationList(span)
+		client.revocationListRefreshError.Store(err)
+
+		if err != nil {
 			time.Sleep(backOffTime)
 
 			if backOffTime < maxBackOffTime {
@@ -66,14 +69,14 @@ func (client *DefaultClient) refreshRevocationList(rootSpan opentracing.Span) {
 	}
 }
 
-// nolint: dupl,funlen
+//nolint:dupl,funlen
 func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error {
-	span := jaeger.StartChildSpan(rootSpan, "client.getRevocationList")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.getRevocationList")
+	defer tracing.Finish(span)
 
-	req, err := http.NewRequest(http.MethodGet, client.config.BaseURL+revocationListPath, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, client.config.BaseURL+revocationListPath, nil)
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "getRevocationList: unable to make new HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "getRevocationList: unable to make new HTTP request"))
 		return errors.Wrap(err, "getRevocationList: unable to make new HTTP request")
 	}
 
@@ -89,9 +92,9 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 	err = backoff.
 		Retry(
 			func() error {
-				reqSpan := jaeger.StartChildSpan(span, "client.getRevocationList.Retry")
-				defer jaeger.Finish(reqSpan)
-				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
+				reqSpan := tracing.StartChildSpan(span, "client.getRevocationList.Retry")
+				defer tracing.Finish(reqSpan)
+				jErr := tracing.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
@@ -103,13 +106,13 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
-					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
+					tracing.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return errors.Errorf("getRevocationList: endpoint returned status code : %v", responseStatusCode)
 				}
 
-				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				responseBodyBytes, e = io.ReadAll(resp.Body)
 				if e != nil {
-					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					tracing.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
 					return errors.Wrap(e, "getRevocationList: unable to read HTTP response body")
 				}
 
@@ -117,14 +120,13 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 			},
 			b,
 		)
-
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "getRevocationList: unable to do HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "getRevocationList: unable to do HTTP request"))
 		return errors.Wrap(err, "getRevocationList: unable to do HTTP request")
 	}
 
 	if responseStatusCode != http.StatusOK {
-		jaeger.TraceError(
+		tracing.TraceError(
 			span,
 			errors.Errorf(
 				"getRevocationList: unable to get revocation list: error code : %d, error message : %s",
@@ -141,7 +143,7 @@ func (client *DefaultClient) getRevocationList(rootSpan opentracing.Span) error 
 
 	err = json.Unmarshal(responseBodyBytes, &revocationList)
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "getRevocationList: unable to unmarshal response body"))
+		tracing.TraceError(span, errors.Wrap(err, "getRevocationList: unable to unmarshal response body"))
 		return errors.Wrap(err, "getRevocationList: unable to unmarshal response body")
 	}
 

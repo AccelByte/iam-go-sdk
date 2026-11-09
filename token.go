@@ -16,31 +16,32 @@ package iam
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/AccelByte/go-jose/jwt"
-	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
+	"github.com/AccelByte/iam-go-sdk/v2/internal/tracing"
 	"github.com/cenkalti/backoff"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 )
 
-// nolint: funlen
+//nolint:funlen
 func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan opentracing.Span) (bool, error) {
-	span := jaeger.StartChildSpan(rootSpan, "client.validateAccessToken")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.validateAccessToken")
+	defer tracing.Finish(span)
 
 	form := url.Values{}
 	form.Add("token", accessToken)
 
-	req, err := http.NewRequest(http.MethodPost, client.config.BaseURL+verifyPath, bytes.NewBufferString(form.Encode()))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, client.config.BaseURL+verifyPath, bytes.NewBufferString(form.Encode()))
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "validateAccessToken: unable to create new HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "validateAccessToken: unable to create new HTTP request"))
 		return false, errors.Wrap(err, "validateAccessToken: unable to create new HTTP request")
 	}
 
@@ -55,21 +56,21 @@ func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan op
 	err = backoff.
 		Retry(
 			func() error {
-				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
-				defer jaeger.Finish(reqSpan)
-				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
+				reqSpan := tracing.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer tracing.Finish(reqSpan)
+				jErr := tracing.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
 				if e != nil {
-					jaeger.TraceError(reqSpan, e)
+					tracing.TraceError(reqSpan, e)
 					return backoff.Permanent(e)
 				}
 				defer resp.Body.Close()
 
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
-					jaeger.TraceError(
+					tracing.TraceError(
 						reqSpan,
 						errors.Errorf(
 							"validateAccessToken: endpoint returned status code : %v",
@@ -84,14 +85,13 @@ func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan op
 			},
 			b,
 		)
-
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "validateAccessToken: unable to do HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "validateAccessToken: unable to do HTTP request"))
 		return false, errors.Wrap(err, "validateAccessToken: unable to do HTTP request")
 	}
 
 	if responseStatusCode == http.StatusUnauthorized {
-		jaeger.TraceError(span, errors.Wrap(errUnauthorized, "validateAccessToken: unauthorized"))
+		tracing.TraceError(span, errors.Wrap(errUnauthorized, "validateAccessToken: unauthorized"))
 		return false, errors.Wrap(errUnauthorized, "validateAccessToken: unauthorized")
 	}
 
@@ -104,8 +104,8 @@ func (client *DefaultClient) validateAccessToken(accessToken string, rootSpan op
 }
 
 func (client *DefaultClient) validateJWT(token string, rootSpan opentracing.Span) (*JWTClaims, error) {
-	span := jaeger.StartChildSpan(rootSpan, "client.validateJWT")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.validateJWT")
+	defer tracing.Finish(span)
 
 	if token == "" {
 		return nil, errors.WithMessage(errEmptyToken, "validateJWT: invalid token")
@@ -156,8 +156,8 @@ func (client *DefaultClient) userRevoked(userID string, issuedAt int64) bool {
 }
 
 func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) (time.Duration, error) {
-	span := jaeger.StartChildSpan(rootSpan, "client.refreshAccessToken")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.refreshAccessToken")
+	defer tracing.Finish(span)
 
 	var tokenRefreshInterval time.Duration
 
@@ -168,12 +168,12 @@ func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) (time
 		func() error {
 			var e error
 
-			reqSpan := jaeger.StartChildSpan(span, "client.refreshAccessToken.Retry")
-			defer jaeger.Finish(reqSpan)
+			reqSpan := tracing.StartChildSpan(span, "client.refreshAccessToken.Retry")
+			defer tracing.Finish(reqSpan)
 
 			tokenRefreshInterval, e = client.clientTokenGrant(reqSpan)
 			if e != nil {
-				jaeger.TraceError(reqSpan, e)
+				tracing.TraceError(reqSpan, e)
 				return e
 			}
 
@@ -181,8 +181,8 @@ func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) (time
 		},
 		b,
 	)
-	if err != nil {
-		jaeger.AddLog(span, "msg", "refreshAccessToken: client token refreshed")
+	if err == nil {
+		tracing.AddLog(span, "msg", "refreshAccessToken: client token refreshed")
 		log("refreshAccessToken: client token refreshed")
 	}
 
@@ -192,8 +192,8 @@ func (client *DefaultClient) refreshAccessToken(rootSpan opentracing.Span) (time
 }
 
 func (client *DefaultClient) spawnRefreshAccessTokenScheduler(rootSpan opentracing.Span) {
-	span := jaeger.StartChildSpan(rootSpan, "client.spawnRefreshAccessTokenScheduler")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.spawnRefreshAccessTokenScheduler")
+	defer tracing.Finish(span)
 
 	for {
 		tokenRefreshInterval, err := client.refreshAccessToken(span)
@@ -201,27 +201,25 @@ func (client *DefaultClient) spawnRefreshAccessTokenScheduler(rootSpan opentraci
 			continue
 		}
 
-		jaeger.AddLog(span, "msg", "refreshAccessToken: client token refreshed")
-		log("refreshAccessToken: client token refreshed")
 		time.Sleep(tokenRefreshInterval)
 	}
 }
 
-// nolint: funlen, dupl
+//nolint:funlen,dupl
 func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.Duration, error) {
-	span := jaeger.StartChildSpan(rootSpan, "client.clientTokenGrant")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.clientTokenGrant")
+	defer tracing.Finish(span)
 
 	form := url.Values{}
 	form.Add("grant_type", "client_credentials")
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(context.Background(),
 		http.MethodPost,
 		client.config.BaseURL+grantPath,
 		bytes.NewBufferString(form.Encode()),
 	)
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to create new HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to create new HTTP request"))
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to create new HTTP request")
 	}
 
@@ -238,9 +236,9 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 	err = backoff.
 		Retry(
 			func() error {
-				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
-				defer jaeger.Finish(reqSpan)
-				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
+				reqSpan := tracing.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer tracing.Finish(reqSpan)
+				jErr := tracing.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
@@ -251,13 +249,13 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
-					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
+					tracing.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return errors.Errorf("clientTokenGrant: endpoint returned status code : %v", responseStatusCode)
 				}
 
-				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				responseBodyBytes, e = io.ReadAll(resp.Body)
 				if e != nil {
-					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					tracing.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
 					return errors.Wrap(e, "clientTokenGrant: unable to read response body")
 				}
 
@@ -265,14 +263,13 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 			},
 			b,
 		)
-
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to do HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to do HTTP request"))
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to do HTTP request")
 	}
 
 	if responseStatusCode != http.StatusOK {
-		jaeger.TraceError(
+		tracing.TraceError(
 			span,
 			errors.Errorf(
 				"clientTokenGrant: unable to grant client token: error code : %d, error message : %s",
@@ -289,7 +286,7 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 
 	err = json.Unmarshal(responseBodyBytes, &tokenResponse)
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to unmarshal response body"))
+		tracing.TraceError(span, errors.Wrap(err, "clientTokenGrant: unable to unmarshal response body"))
 		return 0, errors.Wrap(err, "clientTokenGrant: unable to unmarshal response body")
 	}
 
@@ -299,22 +296,22 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 	return refreshInterval, nil
 }
 
-// nolint: funlen, dupl
+//nolint:funlen,dupl
 func (client *DefaultClient) clientDelegateTokenGrant(extendNamespace string, rootSpan opentracing.Span) (token string, ttl *time.Duration, err error) {
-	span := jaeger.StartChildSpan(rootSpan, "client.clientDelegateTokenGrant")
-	defer jaeger.Finish(span)
+	span := tracing.StartChildSpan(rootSpan, "client.clientDelegateTokenGrant")
+	defer tracing.Finish(span)
 
 	form := url.Values{}
 	form.Add("grant_type", "urn:ietf:params:oauth:grant-type:extend_client_credentials")
 	form.Add("extendNamespace", extendNamespace)
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(context.Background(),
 		http.MethodPost,
 		client.config.BaseURL+grantPath,
 		bytes.NewBufferString(form.Encode()),
 	)
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "clientDelegateTokenGrant: unable to create new HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "clientDelegateTokenGrant: unable to create new HTTP request"))
 		return "", nil, errors.Wrap(err, "clientDelegateTokenGrant: unable to create new HTTP request")
 	}
 
@@ -331,9 +328,9 @@ func (client *DefaultClient) clientDelegateTokenGrant(extendNamespace string, ro
 	err = backoff.
 		Retry(
 			func() error {
-				reqSpan := jaeger.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
-				defer jaeger.Finish(reqSpan)
-				jErr := jaeger.InjectSpanIntoRequest(reqSpan, req)
+				reqSpan := tracing.StartChildSpan(span, "HTTP Request: "+req.Method+" "+req.URL.Path)
+				defer tracing.Finish(reqSpan)
+				jErr := tracing.InjectSpanIntoRequest(reqSpan, req)
 				logErr(jErr)
 
 				resp, e := client.httpClient.Do(req)
@@ -344,13 +341,13 @@ func (client *DefaultClient) clientDelegateTokenGrant(extendNamespace string, ro
 
 				responseStatusCode = resp.StatusCode
 				if resp.StatusCode >= http.StatusInternalServerError {
-					jaeger.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
+					tracing.TraceError(reqSpan, fmt.Errorf("StatusCode: %v", resp.StatusCode))
 					return errors.Errorf("clientDelegateTokenGrant: endpoint returned status code : %v", responseStatusCode)
 				}
 
-				responseBodyBytes, e = ioutil.ReadAll(resp.Body)
+				responseBodyBytes, e = io.ReadAll(resp.Body)
 				if e != nil {
-					jaeger.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
+					tracing.TraceError(reqSpan, fmt.Errorf("Body.ReadAll: %s", e))
 					return errors.Wrap(e, "clientDelegateTokenGrant: unable to read response body")
 				}
 
@@ -358,14 +355,13 @@ func (client *DefaultClient) clientDelegateTokenGrant(extendNamespace string, ro
 			},
 			b,
 		)
-
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "clientDelegateTokenGrant: unable to do HTTP request"))
+		tracing.TraceError(span, errors.Wrap(err, "clientDelegateTokenGrant: unable to do HTTP request"))
 		return "", nil, errors.Wrap(err, "clientDelegateTokenGrant: unable to do HTTP request")
 	}
 
 	if responseStatusCode != http.StatusOK {
-		jaeger.TraceError(
+		tracing.TraceError(
 			span,
 			errors.Errorf(
 				"clientDelegateTokenGrant: unable to grant delegate client token: error code : %d, error message : %s",
@@ -382,7 +378,7 @@ func (client *DefaultClient) clientDelegateTokenGrant(extendNamespace string, ro
 
 	err = json.Unmarshal(responseBodyBytes, &tokenResponse)
 	if err != nil {
-		jaeger.TraceError(span, errors.Wrap(err, "clientDelegateTokenGrant: unable to unmarshal response body"))
+		tracing.TraceError(span, errors.Wrap(err, "clientDelegateTokenGrant: unable to unmarshal response body"))
 		return "", nil, errors.Wrap(err, "clientDelegateTokenGrant: unable to unmarshal response body")
 	}
 	refreshInterval := time.Duration(float64(tokenResponse.ExpiresIn)*defaultTokenRefreshRate) * time.Second

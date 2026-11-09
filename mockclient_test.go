@@ -19,7 +19,6 @@ import (
 
 	jose "github.com/AccelByte/go-jose"
 	"github.com/AccelByte/go-jose/jwt"
-	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,8 +28,6 @@ var (
 )
 
 func init() {
-	jaeger.InitGlobalTracer(jaegerAgentHost, "", "test", "")
-
 	var err error
 
 	mockSigner, err = jose.NewSigner(

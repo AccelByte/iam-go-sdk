@@ -21,7 +21,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -30,21 +30,23 @@ import (
 	"github.com/AccelByte/bloom"
 	jose "github.com/AccelByte/go-jose"
 	"github.com/AccelByte/go-jose/jwt"
-	"github.com/AccelByte/go-restful-plugins/v3/pkg/jaeger"
 	"github.com/bluele/gcache"
 	"github.com/google/uuid"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/mocktracer"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 const (
-	defaultUserRole   = "2251438839e948d783ec0e5281daf05b"
-	mockUserRole      = "9a59f28b622e43f4a6edb214a13bb8aa"
-	keyID             = "testKey"
-	invalid           = "invalid"
+	defaultUserRole = "2251438839e948d783ec0e5281daf05b"
+	mockUserRole    = "9a59f28b622e43f4a6edb214a13bb8aa"
+	keyID           = "testKey"
+	invalid         = "invalid"
+	//nolint:gosec // test-only key used to sign test tokens
 	testJWTPrivateKey = `-----BEGIN RSA PRIVATE KEY-----
 MIIEpAIBAAKCAQEAyVnj4nzplD5g3a3bm1kpVNACMSP2MBZ81rD/UHORm3k+DlaY
 pL3EY5itPHr2tBYOnXMGsRgUM1hELz004Rabx8CsvzxUzaLMP6bYPZmX5KWmaC6N
@@ -72,7 +74,6 @@ Zpzt520CgYAHO3H5PpOCmj3I0Udz44gJrgb17myugTXoTzZysUwu+WDOvLMTxW1o
 QhLJPw+k1O94WC5Ysmk/rRxL4ZQujNPoz5YI4ELOquzi6Q7cxaieTidz1HuXMf35
 RDShmvcHF7W6ost87Z9tLYxaAQJVcMQVXlH/9VJ2QsFBZYZJjkjE9g==
 -----END RSA PRIVATE KEY-----`
-	jaegerAgentHost = "localhost:6831"
 )
 
 type tokenUserData struct {
@@ -95,7 +96,8 @@ var (
 )
 
 func init() {
-	jaeger.InitGlobalTracer(jaegerAgentHost, "", "test", "")
+	// Record spans in memory so the tracing code paths run during tests.
+	opentracing.SetGlobalTracer(mocktracer.New())
 
 	privateKey = mustUnmarshalRSA(testJWTPrivateKey)
 	testClient = NewDefaultClient(&Config{})
@@ -104,7 +106,7 @@ func init() {
 	testClient.rolePermissionCache = cache.New(cache.DefaultExpiration, cache.DefaultExpiration)
 	testClient.revocationFilter = bloom.New(100)
 	testClient.revokedUsers = make(map[string]time.Time)
-	testClient.localValidationActive = true
+	testClient.localValidationActive.Store(true)
 	testClient.clientInfoCache = cache.New(cache.DefaultExpiration, cache.DefaultExpiration)
 
 	var err error
@@ -123,8 +125,8 @@ func init() {
 	}
 
 	testClient.keys[keyID] = &rsa.PublicKey{
-		E: privateKey.PublicKey.E,
-		N: privateKey.PublicKey.N,
+		E: privateKey.E,
+		N: privateKey.N,
 	}
 
 	testClient.rolePermissionCache.Set(
@@ -137,7 +139,7 @@ func init() {
 		},
 		cache.DefaultExpiration)
 
-	testClient.roleNamespacePermissionCache.Set(buildRoleOverrideCacheKey("", defaultUserRole), []Permission{
+	_ = testClient.roleNamespacePermissionCache.Set(buildRoleOverrideCacheKey("", defaultUserRole), []Permission{
 		{
 			Resource: "NAMESPACE:{namespace}:USER:{userId}:ORDER",
 			Action:   ActionCreate | ActionRead | ActionUpdate,
@@ -158,18 +160,17 @@ func init() {
 		},
 		cache.DefaultExpiration)
 
-	testClient.remoteTokenValidation =
-		func(accessToken string, rootSpan opentracing.Span) (bool, error) {
-			if accessToken == invalid {
-				return false, nil
-			}
-
-			return true, nil
+	testClient.remoteTokenValidation = func(accessToken string, rootSpan opentracing.Span) (bool, error) {
+		if accessToken == invalid {
+			return false, nil
 		}
+
+		return true, nil
+	}
 }
 
 func setRoleNamespacePermission(namespace, roleId string) {
-	testClient.roleNamespacePermissionCache.Set(buildRoleOverrideCacheKey(namespace, roleId), []Permission{
+	_ = testClient.roleNamespacePermissionCache.Set(buildRoleOverrideCacheKey(namespace, roleId), []Permission{
 		{
 			Resource: "NAMESPACE:{namespace}:USER:{userId}:ORDER",
 			Action:   ActionCreate | ActionRead | ActionUpdate,
@@ -223,9 +224,12 @@ func Test_GetClientToken(t *testing.T) {
 				AccessToken: mockAccessToken,
 			}
 
-			b, _ := json.Marshal(tokenResp)
+			b, err := json.Marshal(tokenResp) //nolint:gosec // mock token response in a test
+			if err != nil {
+				return nil, err
+			}
 
-			r := ioutil.NopCloser(bytes.NewReader(b))
+			r := io.NopCloser(bytes.NewReader(b))
 
 			return &http.Response{
 				Status:     http.StatusText(http.StatusOK),
@@ -247,8 +251,8 @@ func Test_GetClientToken(t *testing.T) {
 	assert.Equal(t, mockAccessToken, token, "access token should be equal")
 
 	// test tracing
-	err = defaultClient.ClientTokenGrant(WithJaegerContext(context.Background()))
-	token = defaultClient.ClientToken(WithJaegerContext(context.Background()))
+	err = defaultClient.ClientTokenGrant(WithContext(context.Background()))
+	token = defaultClient.ClientToken(WithContext(context.Background()))
 
 	assert.NoError(t, err, "client token grant should be successful")
 	assert.Equal(t, mockAccessToken, token, "access token should be equal")
@@ -264,9 +268,12 @@ func Test_StartLocalValidation(t *testing.T) {
 				RevocationList
 			}{}
 
-			b, _ := json.Marshal(resp)
+			b, err := json.Marshal(resp)
+			if err != nil {
+				return nil, err
+			}
 
-			r := ioutil.NopCloser(bytes.NewReader(b))
+			r := io.NopCloser(bytes.NewReader(b))
 
 			return &http.Response{
 				Status:     http.StatusText(http.StatusOK),
@@ -284,15 +291,15 @@ func Test_StartLocalValidation(t *testing.T) {
 	err := defaultClient.StartLocalValidation()
 
 	assert.NoError(t, err, "start local validation should be successful")
-	assert.True(t, defaultClient.localValidationActive, "local validation should be active")
+	assert.True(t, defaultClient.localValidationActive.Load(), "local validation should be active")
 
 	// test tracing
-	err = defaultClient.StartLocalValidation(WithJaegerContext(context.Background()))
+	err = defaultClient.StartLocalValidation(WithContext(context.Background()))
 	assert.NoError(t, err, "start local validation should be successful")
-	assert.True(t, defaultClient.localValidationActive, "local validation should be active")
+	assert.True(t, defaultClient.localValidationActive.Load(), "local validation should be active")
 }
 
-// nolint: dupl
+//nolint:dupl
 func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
 	t.Parallel()
 
@@ -320,12 +327,12 @@ func Test_DefaultClientUserEmailVerificationStatus(t *testing.T) {
 		assert.Equal(t, testCase.expectedValidationResult, validationResult, "email verification validation does not match")
 
 		// test tracing
-		validationResult, _ = testClient.UserEmailVerificationStatus(claims, WithJaegerContext(context.Background()))
+		validationResult, _ = testClient.UserEmailVerificationStatus(claims, WithContext(context.Background()))
 		assert.Equal(t, testCase.expectedValidationResult, validationResult, "email verification validation does not match")
 	}
 }
 
-// nolint: dupl
+//nolint:dupl
 func Test_DefaultClientUserPhoneVerificationStatus(t *testing.T) {
 	t.Parallel()
 
@@ -354,12 +361,12 @@ func Test_DefaultClientUserPhoneVerificationStatus(t *testing.T) {
 		assert.Equal(t, testCase.expectedValidationResult, validationResult, "phone verification validation does not match")
 
 		// test tracing
-		validationResult, _ = testClient.UserPhoneVerificationStatus(claims, WithJaegerContext(context.Background()))
+		validationResult, _ = testClient.UserPhoneVerificationStatus(claims, WithContext(context.Background()))
 		assert.Equal(t, testCase.expectedValidationResult, validationResult, "phone verification validation does not match")
 	}
 }
 
-// nolint: dupl
+//nolint:dupl
 func Test_DefaultClientUserAnonymousStatus(t *testing.T) {
 	t.Parallel()
 
@@ -389,7 +396,7 @@ func Test_DefaultClientUserAnonymousStatus(t *testing.T) {
 			"anonymous verification validation does not match")
 
 		// test tracing
-		validationResult, _ = testClient.UserAnonymousStatus(claims, WithJaegerContext(context.Background()))
+		validationResult, _ = testClient.UserAnonymousStatus(claims, WithContext(context.Background()))
 		assert.Equal(t, testCase.expectedValidationResult, validationResult,
 			"anonymous verification validation does not match")
 	}
@@ -423,7 +430,7 @@ func Test_DefaultClientValidateAndParseClaims(t *testing.T) {
 	// test tracing
 	claims, errValidateAndParseClaims = testClient.ValidateAndParseClaims(
 		accessToken,
-		WithJaegerContext(context.Background()),
+		WithContext(context.Background()),
 	)
 	assert.Nil(t, errValidateAndParseClaims, "access token is invalid")
 	assert.NotNil(t, claims, "claims should not nil")
@@ -499,13 +506,13 @@ func Test_DefaultClientValidateAndParseClaims_ExpiredToken(t *testing.T) {
 	// test tracing
 	claims, errValidateAndParseClaims = testClient.ValidateAndParseClaims(
 		accessToken,
-		WithJaegerContext(context.Background()),
+		WithContext(context.Background()),
 	)
 	assert.Error(t, errValidateAndParseClaims, "access token should be invalid")
 	assert.Nil(t, claims, "claims should be nil")
 }
 
-// nolint: funlen
+//nolint:funlen
 func Test_DefaultClientValidatePermission(t *testing.T) {
 	t.Parallel()
 
@@ -595,7 +602,7 @@ func Test_DefaultClientValidatePermission(t *testing.T) {
 			claims,
 			requiredPermission,
 			permissionResources,
-			WithJaegerContext(context.Background()),
+			WithContext(context.Background()),
 		)
 		assert.Equal(t, testCase.expectedResult, validationResult, "resource string validation does not match")
 	}
@@ -713,7 +720,7 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRole_InvalidNamespaceR
 			claims,
 			requiredPermission,
 			permissionResources,
-			WithJaegerContext(context.Background()),
+			WithContext(context.Background()),
 		)
 		assert.Equal(t, testCase.expectedResult, validationResult,
 			"resource string %s validation on roles does not match", requiredPermission.Resource)
@@ -756,14 +763,14 @@ func Test_DefaultClientValidatePermission_ResourceStringOnRoles(t *testing.T) {
 			claims,
 			requiredPermission,
 			permissionResources,
-			WithJaegerContext(context.Background()),
+			WithContext(context.Background()),
 		)
 		assert.Equal(t, testCase.expectedResult, validationResult,
 			"resource string %s validation on roles does not match", requiredPermission.Resource)
 	}
 }
 
-// nolint: funlen
+//nolint:funlen
 func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
 	t.Parallel()
 
@@ -838,7 +845,7 @@ func Test_DefaultClientValidatePermission_ActionBitMask(t *testing.T) {
 			claims,
 			requiredPermission,
 			permissionResources,
-			WithJaegerContext(context.Background()),
+			WithContext(context.Background()),
 		)
 		assert.Equal(t, testCase.expectedResult, validationResult, "action bitmask validation does not match")
 	}
@@ -889,7 +896,7 @@ func Test_HasRoleForStudioAndRelatedGameWithOldFormatNamespace(t *testing.T) {
 		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
-		localValidationActive: true,
+		localValidationActive: *atomic.NewBool(true),
 		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		namespaceContextCache: gcache.New(1000).LRU().
 			LoaderExpireFunc(func(namespace interface{}) (interface{}, *time.Duration, error) {
@@ -943,7 +950,7 @@ func Test_DefaultClientValidateRoleID(t *testing.T) {
 	assert.True(t, validationResult, "resource roles id validation does not match")
 
 	// test tracing
-	validationResult, _ = testClient.ValidateRole(defaultUserRole, claims, WithJaegerContext(context.Background()))
+	validationResult, _ = testClient.ValidateRole(defaultUserRole, claims, WithContext(context.Background()))
 	assert.True(t, validationResult, "resource roles id validation does not match")
 }
 
@@ -961,7 +968,7 @@ func Test_DefaultClientValidateRoleID_NotExist(t *testing.T) {
 	validationResult, _ = testClient.ValidateRole(
 		"non-exist-required-role-id",
 		claims,
-		WithJaegerContext(context.Background()),
+		WithContext(context.Background()),
 	)
 	assert.False(t, validationResult, "resource roles id validation does not match")
 }
@@ -982,7 +989,7 @@ func Test_DefaultClientValidateAccessToken(t *testing.T) {
 	assert.True(t, validationResult, "valid direct verification should be granted")
 
 	// test tracing
-	validationResult, _ = testClient.ValidateAccessToken(accessToken, WithJaegerContext(context.Background()))
+	validationResult, _ = testClient.ValidateAccessToken(accessToken, WithContext(context.Background()))
 	assert.True(t, validationResult, "valid direct verification should be granted")
 }
 
@@ -997,7 +1004,7 @@ func Test_DefaultClientValidateAccessToken_InvalidToken(t *testing.T) {
 	assert.False(t, validationResult, "invalid direct verification should not be granted")
 
 	// test tracing
-	validationResult, err = testClient.ValidateAccessToken(invalid, WithJaegerContext(context.Background()))
+	validationResult, err = testClient.ValidateAccessToken(invalid, WithContext(context.Background()))
 	if err != nil {
 		t.Fatalf("unable to validate : %v", err)
 	}
@@ -1031,7 +1038,7 @@ func Test_DefaultClientValidateAndParseClaims_RevokedUser(t *testing.T) {
 	assert.Equal(t, errUserRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
 
 	// test tracing
-	claims, err = testClient.ValidateAndParseClaims(accessToken, WithJaegerContext(context.Background()))
+	claims, err = testClient.ValidateAndParseClaims(accessToken, WithContext(context.Background()))
 	assert.NotNil(t, err, "revoked user validation should not be granted on permission validation")
 	assert.Nil(t, claims, "claims should be nil")
 	assert.Equal(t, errUserRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
@@ -1062,8 +1069,8 @@ func Test_DefaultClientValidateAndParseClaims_RevokedToken(t *testing.T) {
 	assert.Nil(t, claims, "claims should be nil")
 	assert.Equal(t, errTokenRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
 
-	// test jaeger
-	claims, err = testClient.ValidateAndParseClaims(accessToken, WithJaegerContext(context.Background()))
+	// test with a tracing context
+	claims, err = testClient.ValidateAndParseClaims(accessToken, WithContext(context.Background()))
 	assert.NotNil(t, err, "revoked token validation should not be granted on role validation")
 	assert.Nil(t, claims, "claims should be nil")
 	assert.Equal(t, errTokenRevoked.Error(), errors.Cause(err).Error(), "error message didn't match")
@@ -1082,11 +1089,11 @@ func Test_DefaultClientHasBan(t *testing.T) {
 	assert.True(t, testClient.HasBan(
 		claims,
 		"TEST_BAN",
-		WithJaegerContext(context.Background()),
+		WithContext(context.Background()),
 	), "ban not found")
 }
 
-// nolint: dupl
+//nolint:dupl
 func Test_ValidateAudience(t *testing.T) {
 	t.Parallel()
 
@@ -1100,7 +1107,7 @@ func Test_ValidateAudience(t *testing.T) {
 		doMock: func(req *http.Request) (*http.Response, error) {
 			httpRequestTriggerCount++
 
-			r := ioutil.NopCloser(strings.NewReader(`
+			r := io.NopCloser(strings.NewReader(`
 {
    "clientID": "5a2cf6407d6349c7a75264c2c1d04a10",
    "clientName": "test client",
@@ -1129,7 +1136,7 @@ func Test_ValidateAudience(t *testing.T) {
 		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
-		localValidationActive: true,
+		localValidationActive: *atomic.NewBool(true),
 		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            mockHTTPClient,
 	}
@@ -1146,7 +1153,7 @@ func Test_ValidateAudience(t *testing.T) {
 	assert.Equal(t, 1, httpRequestTriggerCount) // http request should only called once
 }
 
-// nolint: dupl
+//nolint:dupl
 func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
 	t.Parallel()
 
@@ -1156,7 +1163,7 @@ func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
 
 	mockHTTPClient := &httpClientMock{
 		doMock: func(req *http.Request) (*http.Response, error) {
-			r := ioutil.NopCloser(strings.NewReader(`
+			r := io.NopCloser(strings.NewReader(`
 {
    "clientID": "5a2cf6407d6349c7a75264c2c1d04a10",
    "clientName": "test client",
@@ -1185,7 +1192,7 @@ func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
 		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
-		localValidationActive: true,
+		localValidationActive: *atomic.NewBool(true),
 		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            mockHTTPClient,
 	}
@@ -1195,7 +1202,7 @@ func Test_ValidateAudience_TokenIsNotIntendedForTheClient(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-// nolint: dupl
+//nolint:dupl
 func Test_ValidateAudience_ClientNotFound(t *testing.T) {
 	t.Parallel()
 
@@ -1209,7 +1216,7 @@ func Test_ValidateAudience_ClientNotFound(t *testing.T) {
 
 	mockHTTPClient := &httpClientMock{
 		doMock: func(req *http.Request) (*http.Response, error) {
-			r := ioutil.NopCloser(strings.NewReader(`
+			r := io.NopCloser(strings.NewReader(`
 {
 	"errorCode": "106422",
 	"errorMessage:"client with id a952b5c054de468bab9e0b4802057f11 in namespace accelbyte was not found"
@@ -1230,7 +1237,7 @@ func Test_ValidateAudience_ClientNotFound(t *testing.T) {
 		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
-		localValidationActive: true,
+		localValidationActive: *atomic.NewBool(true),
 		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            mockHTTPClient,
 	}
@@ -1240,7 +1247,7 @@ func Test_ValidateAudience_ClientNotFound(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-// nolint: dupl
+//nolint:dupl
 func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
 	t.Parallel()
 
@@ -1252,7 +1259,7 @@ func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
 	claims := generateClaims(t, userData)
 	mockHTTPClient := &httpClientMock{
 		doMock: func(req *http.Request) (*http.Response, error) {
-			r := ioutil.NopCloser(strings.NewReader(`
+			r := io.NopCloser(strings.NewReader(`
 {
    "clientID": "5a2cf6407d6349c7a75264c2c1d04a10",
    "clientName": "test client",
@@ -1281,7 +1288,7 @@ func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
 		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
-		localValidationActive: true,
+		localValidationActive: *atomic.NewBool(true),
 		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            mockHTTPClient,
 	}
@@ -1291,8 +1298,9 @@ func Test_ValidateAudience_NoAudFieldInTheToken(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-// nolint: dupl
 // To prevent accidentally passing an empty claim.
+//
+//nolint:dupl
 func Test_ValidateAudience_ClaimsIsNil(t *testing.T) {
 	t.Parallel()
 
@@ -1302,7 +1310,7 @@ func Test_ValidateAudience_ClaimsIsNil(t *testing.T) {
 		rolePermissionCache:   cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		revocationFilter:      bloom.New(100),
 		revokedUsers:          make(map[string]time.Time),
-		localValidationActive: true,
+		localValidationActive: *atomic.NewBool(true),
 		clientInfoCache:       cache.New(cache.DefaultExpiration, cache.DefaultExpiration),
 		httpClient:            &http.Client{},
 	}
@@ -1324,7 +1332,7 @@ func Test_ValidateScope(t *testing.T) {
 	assert.NoError(t, err, "validate scope should be successful")
 
 	// test tracing
-	err = testClient.ValidateScope(claims, "mockscope", WithJaegerContext(context.Background()))
+	err = testClient.ValidateScope(claims, "mockscope", WithContext(context.Background()))
 	assert.NoError(t, err, "validate scope should be successful")
 }
 
@@ -1380,9 +1388,10 @@ func Test_GetClientInformation(t *testing.T) {
 		doMock: func(req *http.Request) (*http.Response, error) {
 			httpRequestTriggerCount++
 
-			r := ioutil.NopCloser(strings.NewReader(`
+			r := io.NopCloser(strings.NewReader(`
 {
-   "clientID": "` + clientID + `",
+   "clientID": "` +
+				clientID + `",
    "clientName": "test client",
    "namespace": "accelbyte",
    "redirectUri": "http://127.0.0.1",
@@ -1438,10 +1447,11 @@ func Test_GetClientInformation_ClientNotFound(t *testing.T) {
 	clientID := generateUUID()
 	mockHTTPClient := &httpClientMock{
 		doMock: func(req *http.Request) (*http.Response, error) {
-			r := ioutil.NopCloser(strings.NewReader(`
+			r := io.NopCloser(strings.NewReader(`
 {
   "errorCode": 10365,
-  "errorMessage": "client with id ` + clientID + ` in namespace accelbyte was not found"
+  "errorMessage": "client with id ` +
+				clientID + ` in namespace accelbyte was not found"
 }
 `))
 			return &http.Response{
@@ -1478,7 +1488,7 @@ func Test_GetClientInformation_UnauthorizedThenPerformRefreshClientToken(t *test
 			if isRefreshTokenRequest {
 				refreshTokenFlag = true
 
-				r := ioutil.NopCloser(strings.NewReader(`
+				r := io.NopCloser(strings.NewReader(`
 {
     "access_token": "dummy_valid_token",
     "bans": null,
@@ -1499,7 +1509,7 @@ func Test_GetClientInformation_UnauthorizedThenPerformRefreshClientToken(t *test
 
 			// assume the client token is invalid, so need to refresh token first
 			if !refreshTokenFlag {
-				r := ioutil.NopCloser(strings.NewReader(`
+				r := io.NopCloser(strings.NewReader(`
 {
   "errorCode": 20001,
   "errorMessage": "unauthorized access"
@@ -1513,9 +1523,10 @@ func Test_GetClientInformation_UnauthorizedThenPerformRefreshClientToken(t *test
 				}, nil
 			}
 
-			r := ioutil.NopCloser(strings.NewReader(`
+			r := io.NopCloser(strings.NewReader(`
 {
-   "clientID": "` + clientID + `",
+   "clientID": "` +
+				clientID + `",
    "clientName": "test client",
    "namespace": "accelbyte",
    "redirectUri": "http://127.0.0.1",
@@ -1594,31 +1605,36 @@ func TestDefaultClient_IsSubscribed(t *testing.T) {
 	t.Parallel()
 
 	t.Run("TestDefaultClient_IsSubscribed_With_Nil_ClaimSubscriptions_Success", func(t *testing.T) {
+		t.Parallel()
+
 		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 		claims := generateClaims(t, userData)
 		claims.Subscriptions = nil
 
-		//validate empty claims.subscriptions and empty subscription
+		// validate empty claims.subscriptions and empty subscription
 		assert.True(t, testClient.IsSubscribed(claims, ""), "claims.subscriptions is nil considered valid")
 
-		//validate empty claims.subscriptions and valid subscription
+		// validate empty claims.subscriptions and valid subscription
 		assert.True(t, testClient.IsSubscribed(claims, "online"), "claims.subscriptions is nil considered valid")
 	})
 
 	t.Run("TestDefaultClient_IsSubscribed_With_Empty_ClaimSubscriptions_Fail", func(t *testing.T) {
+		t.Parallel()
+
 		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 		claims := generateClaims(t, userData)
 		claims.Subscriptions = []string{}
 
-		//validate empty claims.subscriptions and empty subscription
+		// validate empty claims.subscriptions and empty subscription
 		assert.False(t, testClient.IsSubscribed(claims, ""), "given subscription is empty")
 
-		//validate empty claims.subscriptions and valid subscription
+		// validate empty claims.subscriptions and valid subscription
 		assert.False(t, testClient.IsSubscribed(claims, "online"), "given subscription is not found")
-
 	})
 
 	t.Run("TestDefaultClient_IsSubscribed_With_Populated_ClaimSubscriptions_Success", func(t *testing.T) {
+		t.Parallel()
+
 		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 		claims := generateClaims(t, userData)
 		claims.Subscriptions = []string{"foundations", "multiplayer", "online"}
@@ -1631,6 +1647,8 @@ func TestDefaultClient_IsSubscribed(t *testing.T) {
 	})
 
 	t.Run("TestDefaultClient_IsSubscribed_With_Populated_ClaimSubscriptions_Fail", func(t *testing.T) {
+		t.Parallel()
+
 		userData := &tokenUserData{UserID: "e9b1ed0c1a3d473cd970abc845b51d3a", Roles: []string{defaultUserRole}}
 		claims := generateClaims(t, userData)
 		claims.Subscriptions = []string{"foundations", "multiplayer"}

@@ -1,3 +1,28 @@
+Release v2.9.0 (unreleased)
+===========================
+### Added
+1. `WithContext(ctx)` option, which sets the parent context for the client's tracing spans
+
+### Deprecated
+1. `WithJaegerContext(ctx)`. Use `WithContext(ctx)`, which behaves the same. The option isn't specific to Jaeger
+
+### Fixed
+1. `StartLocalValidation` and the JWKS refresh stopped loading keys at the first key that couldn't be parsed and still reported success. The client now skips that key, logs it, and loads the rest
+2. A JWKS key whose exponent was longer than 8 bytes made the client panic, which crashed the application when it happened in the background refresh. Keys `crypto/rsa` can't verify with were stored anyway, and could replace a usable key with the same `kid`. The client now skips a key, with a logrus warning, unless its exponent is odd and from 3 to 2^31-1, its modulus is odd and greater than 1, its `kty` is `RSA` or missing, and its `use` is `sig` or missing (compared without case). The minimum key size is left to `crypto/rsa`, so a key that's too small is still stored
+3. Data race: the JWKS and revocation-list refresh errors and the local-validation flag were read by `HealthCheck` and token validation while the background refreshes wrote them
+4. The client token refresh logged "client token refreshed" only when the refresh failed
+5. Tracing: `GetRolePermissions` never finished its span; `ValidateAudience` and `GetClientInformation` didn't pass the trace context on to the client-information request; retried permission requests weren't children of their retry span; several spans had another method's name (`ValidateAndParseClaims`, `ValidatePermission`, `ValidateRole`, `UserPhoneVerificationStatus`, `ValidateScope` and the revocation-list refresh); and the `error` tag was the string `"true"` instead of the boolean the OpenTracing convention uses
+
+### Changed behaviour
+1. The SDK no longer sets the global logrus formatter. Importing `go-restful-plugins/v3` used to run its `pkg/logger/event` `init()`, which calls `logrus.SetFormatter` with a UTC, millisecond-timestamp text formatter. An application that relied on that side effect, and doesn't import `go-restful-plugins` itself, should call `logrus.SetFormatter` on its own
+
+### Modified
+1. Require Go 1.26.0 (`go 1.26.0` in `go.mod`)
+2. Remove the dependency on `github.com/AccelByte/go-restful-plugins/v3`. The OpenTracing span helpers now live in an internal package, so the client no longer pulls in the Jaeger client or `github.com/emicklei/go-restful`. Spans still go to the tracer registered with `opentracing.SetGlobalTracer`
+3. Remove `docker-compose.yml` and `docker-compose-test.yml`, which only ran a Jaeger agent for the tests. The tests now record spans with OpenTracing's in-memory `mocktracer`
+4. Update `github.com/AccelByte/go-jose` to v2.1.5
+5. Update dependencies: `golang.org/x/crypto` v0.58.0, `golang.org/x/sys` v0.49.0, `github.com/sirupsen/logrus` v1.9.3, `github.com/google/uuid` v1.6.0, `github.com/opentracing/opentracing-go` v1.2.0, `github.com/pkg/errors` v0.9.1, `go.uber.org/atomic` v1.11.0, `github.com/stretchr/testify` v1.11.1
+
 Release v2.5.1 (2024-09-11)
 ===========================
 ### Modified

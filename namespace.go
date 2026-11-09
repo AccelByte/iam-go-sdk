@@ -15,12 +15,14 @@
 package iam
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"io/ioutil"
-	"net/http"
 )
 
 const (
@@ -40,10 +42,9 @@ type NamespaceContext struct {
 	StudioNamespace string `json:"studioNamespace"`
 }
 
-func (client *DefaultClient) getNamespaceContext(namespace string) (context *NamespaceContext, err error) {
+func (client *DefaultClient) getNamespaceContext(namespace string) (*NamespaceContext, error) {
 	getNamespaceURL := fmt.Sprintf(getNamespaceContextPath, client.config.BasicBaseURL, namespace, true)
-	// nolint:noctx
-	req, err := http.NewRequest(http.MethodGet, getNamespaceURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, getNamespaceURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("unable to generate request: %v", err)
 	}
@@ -57,7 +58,7 @@ func (client *DefaultClient) getNamespaceContext(namespace string) (context *Nam
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		respBody, errReadBody := ioutil.ReadAll(resp.Body)
+		respBody, errReadBody := io.ReadAll(resp.Body)
 		if errReadBody != nil {
 			logrus.Warnf("unable to read response body: %v", errReadBody)
 		}
@@ -70,7 +71,7 @@ func (client *DefaultClient) getNamespaceContext(namespace string) (context *Nam
 		}
 		return nil, fmt.Errorf("failed with code: %v, response body: %s", resp.StatusCode, string(respBody))
 	}
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read response body: %v", err)
 	}
