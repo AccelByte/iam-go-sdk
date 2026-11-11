@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/AccelByte/bloom v0.0.0-20180915202807-98c052463922
-	github.com/AccelByte/go-jose v2.1.5+incompatible
+	github.com/AccelByte/go-jose v2.1.6+incompatible
 	github.com/bluele/gcache v0.0.2
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/google/uuid v1.6.0

@@ -1,3 +1,8 @@
+Release v2.9.1 (2026-11-11)
+===========================
+### Modified
+1. Update `github.com/AccelByte/go-jose` to v2.1.6. That release fixes the fork's deprecated `A128CBC+HS256` (JWE draft-08) decryption: it checks the authentication tag before decrypting, rejects a wrong key or nonce size instead of panicking, and derives the content key as draft-08 specifies. The SDK only verifies signed JWTs and doesn't use JWE, so its behaviour doesn't change
+
 Release v2.9.0 (2026-11-09)
 ===========================
 ### Added
